@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
 interface GeoLocationError {
@@ -17,47 +17,78 @@ interface UseLocationResult {
   longitude: number | null;
   error: string | null;
   isLoading: boolean;
-  getCurrentLocation: () => Promise<{ latitude: number; longitude: number; } | null>;
+  accuracy: number | null;
+  timestamp: number | null;
+  getCurrentLocation: () => Promise<{ latitude: number; longitude: number; accuracy?: number; } | null>;
+  startWatchingLocation: () => void;
+  stopWatchingLocation: () => void;
 }
 
 export function useLocation(): UseLocationResult {
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [timestamp, setTimestamp] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [watchId, setWatchId] = useState<number | null>(null);
   const { toast } = useToast();
 
-  const options: GeoLocationOptions = {
+  const highAccuracyOptions: GeoLocationOptions = {
     enableHighAccuracy: true,
-    timeout: 15000, // 15 seconds
+    timeout: 15000,
     maximumAge: 0
   };
 
-  const onSuccess = (position: GeolocationPosition) => {
-    setLatitude(position.coords.latitude);
-    setLongitude(position.coords.longitude);
-    setError(null);
-    setIsLoading(false);
+  const lowAccuracyOptions: GeoLocationOptions = {
+    enableHighAccuracy: false,
+    timeout: 10000,
+    maximumAge: 30000
   };
 
-  const onError = (error: GeoLocationError) => {
-    setError(error.message);
+  const handleSuccess = useCallback((position: GeolocationPosition) => {
+    setLatitude(position.coords.latitude);
+    setLongitude(position.coords.longitude);
+    setAccuracy(position.coords.accuracy);
+    setTimestamp(position.timestamp);
+    setError(null);
+    setIsLoading(false);
+  }, []);
+
+  const handleError = useCallback((error: GeoLocationError) => {
+    let errorMessage = '';
+    switch (error.code) {
+      case 1:
+        errorMessage = 'Location access denied. Please enable location services in your browser settings and refresh the page.';
+        break;
+      case 2:
+        errorMessage = 'Location unavailable. Please check your device\'s location settings.';
+        break;
+      case 3:
+        errorMessage = 'Location request timed out. Please try again.';
+        break;
+      default:
+        errorMessage = error.message;
+    }
+    
+    setError(errorMessage);
     setIsLoading(false);
     toast({
       title: "Location Error",
-      description: `Failed to get your location: ${error.message}`,
+      description: errorMessage,
       variant: "destructive",
     });
-  };
+  }, [toast]);
 
-  const getCurrentLocation = async (): Promise<{ latitude: number; longitude: number; } | null> => {
+  const getCurrentLocation = useCallback(async (): Promise<{ latitude: number; longitude: number; accuracy?: number; } | null> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        setError("Geolocation is not supported by your browser");
+        const errorMsg = "Geolocation is not supported by your browser";
+        setError(errorMsg);
         setIsLoading(false);
         toast({
           title: "Location Error",
-          description: "Please enable location access in your browser settings",
+          description: errorMsg,
           variant: "destructive",
         });
         resolve(null);
@@ -66,64 +97,107 @@ export function useLocation(): UseLocationResult {
 
       setIsLoading(true);
 
+      // Try high accuracy first
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          const { latitude, longitude } = position.coords;
-          setLatitude(latitude);
-          setLongitude(longitude);
-          setError(null);
-          setIsLoading(false);
-          resolve({ latitude, longitude });
+          const { latitude, longitude, accuracy } = position.coords;
+          handleSuccess(position);
+          resolve({ latitude, longitude, accuracy });
         },
+        // If high accuracy fails, try low accuracy
         (error) => {
-          setError(error.message);
-          setIsLoading(false);
-          toast({
-            title: "Location Error",
-            description: `Failed to get your location: ${error.message}`,
-            variant: "destructive",
-          });
-          resolve(null);
+          if (error.code === 2) { // POSITION_UNAVAILABLE
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                const { latitude, longitude, accuracy } = position.coords;
+                handleSuccess(position);
+                resolve({ latitude, longitude, accuracy });
+              },
+              (lowAccError) => {
+                handleError(lowAccError);
+                resolve(null);
+              },
+              lowAccuracyOptions
+            );
+          } else {
+            handleError(error);
+            resolve(null);
+          }
         },
-        options
+        highAccuracyOptions
       );
     });
-  };
+  }, [handleSuccess, handleError, toast]);
 
-  useEffect(() => {
+  const startWatchingLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setError("Geolocation is not supported by your browser");
-      setIsLoading(false);
       return;
     }
 
-    // Check if we have permission first
-    navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-      if (result.state === 'denied') {
-        setError("Location access denied. Please enable it in your browser settings.");
-        setIsLoading(false);
-        toast({
-          title: "Location Access Required",
-          description: "Please enable location access to use this feature",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      navigator.geolocation.getCurrentPosition(onSuccess, onError, options);
+    // Clear existing watch
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+    }
 
-      const watchId = navigator.geolocation.watchPosition(onSuccess, onError, options);
+    const id = navigator.geolocation.watchPosition(
+      handleSuccess,
+      handleError,
+      highAccuracyOptions
+    );
 
-      return () => {
-        navigator.geolocation.clearWatch(watchId);
-      };
-    });
-  }, []);
+    setWatchId(id);
+  }, [handleSuccess, handleError, watchId]);
 
-  return { latitude, longitude, error, isLoading, getCurrentLocation };
+  const stopWatchingLocation = useCallback(() => {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      setWatchId(null);
+    }
+  }, [watchId]);
+
+  useEffect(() => {
+    // Check permissions on mount
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+        if (result.state === 'denied') {
+          setError("Location access denied. Please enable it in your browser settings and refresh the page.");
+          setIsLoading(false);
+          toast({
+            title: "Location Access Required",
+            description: "Please enable location access in your browser settings and refresh the page to use this feature",
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        // Get initial location
+        getCurrentLocation();
+      });
+    } else {
+      // Fallback for browsers that don't support permissions API
+      getCurrentLocation();
+    }
+
+    return () => {
+      stopWatchingLocation();
+    };
+  }, [getCurrentLocation, stopWatchingLocation, toast]);
+
+  return { 
+    latitude, 
+    longitude, 
+    error, 
+    isLoading, 
+    accuracy,
+    timestamp,
+    getCurrentLocation,
+    startWatchingLocation,
+    stopWatchingLocation
+  };
 }
 
-// Fake estimate distance between two points
+// Calculate distance between two points
 export function calculateDistance(
   lat1: number, 
   lon1: number, 

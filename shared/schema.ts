@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, foreignKey, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, foreignKey, pgEnum, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 import { z } from "zod";
@@ -11,6 +11,32 @@ export enum UserRole {
   RESPONSE_TEAM = "response_team",
   ADMIN = "admin"
 }
+
+// Location tracking table
+export const locationUpdates = pgTable("location_updates", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  latitude: numeric("latitude").notNull(),
+  longitude: numeric("longitude").notNull(),
+  accuracy: numeric("accuracy"),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  source: text("source").notNull().default("user"), // user, ambulance, etc.
+});
+
+export const locationUpdatesRelations = relations(locationUpdates, ({ one }) => ({
+  user: one(users, {
+    fields: [locationUpdates.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertLocationUpdateSchema = createInsertSchema(locationUpdates).pick({
+  userId: true,
+  latitude: true,
+  longitude: true,
+  accuracy: true,
+  source: true,
+});
 
 // User table
 export const users = pgTable("users", {
@@ -37,6 +63,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   }),
   emergencyContacts: many(emergencyContacts),
   emergencyAlerts: many(emergencyAlerts),
+  locationUpdates: many(locationUpdates),
 }));
 
 export const userSchema = z.object({
@@ -126,12 +153,17 @@ export const emergencyAlerts = pgTable("emergency_alerts", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   ambulanceId: integer("ambulance_id").references(() => ambulanceUnits.id),
-  latitude: text("latitude").notNull(),
-  longitude: text("longitude").notNull(),
+  latitude: numeric("latitude").notNull(),
+  longitude: numeric("longitude").notNull(),
+  accuracy: numeric("accuracy"),
   emergencyType: text("emergency_type").notNull(),
   description: text("description"),
-  status: text("status").notNull().default("active"),
+  status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+  assignedAt: timestamp("assigned_at"),
+  priority: text("priority").notNull().default("medium"), // low, medium, high
 });
 
 export const emergencyAlertsRelations = relations(emergencyAlerts, ({ one }) => ({
@@ -146,34 +178,51 @@ export const emergencyAlertsRelations = relations(emergencyAlerts, ({ one }) => 
 }));
 
 export const insertEmergencyAlertSchema = createInsertSchema(emergencyAlerts)
-  .omit({ ambulanceId: true })
+  .omit({ 
+    ambulanceId: true,
+    resolvedAt: true,
+    assignedAt: true,
+    updatedAt: true,
+  })
   .pick({
     userId: true,
     latitude: true,
     longitude: true,
+    accuracy: true,
     emergencyType: true,
     description: true,
+    priority: true,
   });
 
 // Ambulance units table
 export const ambulanceUnits = pgTable("ambulance_units", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  latitude: text("latitude"),
-  longitude: text("longitude"),
+  latitude: numeric("latitude"),
+  longitude: numeric("longitude"),
+  accuracy: numeric("accuracy"),
+  lastLocationUpdate: timestamp("last_location_update"),
   status: text("status").notNull().default("available"),
+  currentEmergencyId: integer("current_emergency_id").references(() => emergencyAlerts.id),
 });
 
-export const ambulanceUnitsRelations = relations(ambulanceUnits, ({ many }) => ({
+export const ambulanceUnitsRelations = relations(ambulanceUnits, ({ many, one }) => ({
   emergencyAlerts: many(emergencyAlerts),
+  currentEmergency: one(emergencyAlerts, {
+    fields: [ambulanceUnits.currentEmergencyId],
+    references: [emergencyAlerts.id],
+  }),
 }));
 
-export const insertAmbulanceUnitSchema = createInsertSchema(ambulanceUnits).pick({
-  name: true,
-  latitude: true,
-  longitude: true,
-  status: true,
-});
+export const insertAmbulanceUnitSchema = createInsertSchema(ambulanceUnits)
+  .omit({ currentEmergencyId: true })
+  .pick({
+    name: true,
+    latitude: true,
+    longitude: true,
+    accuracy: true,
+    status: true,
+  });
 
 // Medical facilities table
 export const medicalFacilities = pgTable("medical_facilities", {
@@ -181,23 +230,29 @@ export const medicalFacilities = pgTable("medical_facilities", {
   name: text("name").notNull(),
   type: text("type").notNull(),
   address: text("address").notNull(),
-  latitude: text("latitude").notNull(),
-  longitude: text("longitude").notNull(),
+  latitude: numeric("latitude").notNull(),
+  longitude: numeric("longitude").notNull(),
   phone: text("phone"),
   openHours: text("open_hours"),
   rating: text("rating"),
+  capacity: integer("capacity"),
+  currentOccupancy: integer("current_occupancy"),
+  lastUpdate: timestamp("last_update"),
 });
 
-export const insertMedicalFacilitySchema = createInsertSchema(medicalFacilities).pick({
-  name: true,
-  type: true,
-  address: true,
-  latitude: true,
-  longitude: true,
-  phone: true,
-  openHours: true,
-  rating: true,
-});
+export const insertMedicalFacilitySchema = createInsertSchema(medicalFacilities)
+  .omit({ currentOccupancy: true, lastUpdate: true })
+  .pick({
+    name: true,
+    type: true,
+    address: true,
+    latitude: true,
+    longitude: true,
+    phone: true,
+    openHours: true,
+    rating: true,
+    capacity: true,
+  });
 
 // Types export
 export type User = z.infer<typeof userSchema>;
@@ -218,3 +273,6 @@ export type InsertAmbulanceUnit = z.infer<typeof insertAmbulanceUnitSchema>;
 
 export type MedicalFacility = typeof medicalFacilities.$inferSelect;
 export type InsertMedicalFacility = z.infer<typeof insertMedicalFacilitySchema>;
+
+export type LocationUpdate = typeof locationUpdates.$inferSelect;
+export type InsertLocationUpdate = z.infer<typeof insertLocationUpdateSchema>;
