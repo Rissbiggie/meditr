@@ -465,6 +465,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get available resources
+  app.get("/api/resources/available", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    try {
+      const resources = await storage.getAvailableResources();
+      return res.json(resources);
+    } catch (error) {
+      console.error("Error retrieving available resources:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Get resource types
+  app.get("/api/resource-types", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    try {
+      const types = await storage.getResourceTypes();
+      return res.json(types);
+    } catch (error) {
+      console.error("Error retrieving resource types:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Get emergency type resources
+  app.get("/api/emergency-type-resources", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    try {
+      const mappings = await storage.getEmergencyTypeResources();
+      return res.json(mappings);
+    } catch (error) {
+      console.error("Error retrieving emergency type resources:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Assign resources to emergency
+  app.post("/api/emergencies/assign-resources", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    try {
+      const { emergencyId, resourceIds } = req.body;
+      const assignments = await storage.assignResources(emergencyId, resourceIds);
+      return res.json(assignments);
+    } catch (error) {
+      console.error("Error assigning resources:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // Create HTTP server
   const httpServer = createServer(app);
 

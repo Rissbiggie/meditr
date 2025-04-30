@@ -20,6 +20,9 @@ interface EmergencySubmissionData {
     longitude: number;
     accuracy?: number;
   };
+  severity: 'low' | 'medium' | 'high';
+  symptoms?: string[];
+  patientCount?: number;
 }
 
 interface EmergencyContextType {
@@ -121,7 +124,12 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
         accuracy: data.location.accuracy?.toString(),
         emergencyType: data.emergencyType,
         description: data.description || '',
-        priority: 'high', // Default to high priority for now
+        priority: data.severity,
+        requiredResources: JSON.stringify({
+          patientCount: data.patientCount || 1,
+          symptoms: data.symptoms || [],
+          severity: data.severity
+        })
       };
       
       const res = await apiRequest('POST', '/api/emergencies', emergencyData);

@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
 
 export function EmergencyModal() {
   const { toast } = useToast();
@@ -22,6 +23,10 @@ export function EmergencyModal() {
 
   const [emergencyType, setEmergencyType] = useState("");
   const [description, setDescription] = useState("");
+  const [severity, setSeverity] = useState<'low' | 'medium' | 'high'>('medium');
+  const [patientCount, setPatientCount] = useState(1);
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [newSymptom, setNewSymptom] = useState("");
   const { 
     getCurrentLocation,
     startWatchingLocation,
@@ -124,7 +129,10 @@ export function EmergencyModal() {
       await submitEmergency({
         emergencyType,
         description: description || '',
-        location: locationData
+        location: locationData,
+        severity,
+        patientCount,
+        symptoms
       });
     } catch (error) {
       console.error('Error submitting emergency:', error);
@@ -140,6 +148,17 @@ export function EmergencyModal() {
 
   const handleTypeSelect = (type: string) => {
     setEmergencyType(type);
+  };
+
+  const handleAddSymptom = () => {
+    if (newSymptom.trim() && !symptoms.includes(newSymptom.trim())) {
+      setSymptoms([...symptoms, newSymptom.trim()]);
+      setNewSymptom("");
+    }
+  };
+
+  const handleRemoveSymptom = (symptom: string) => {
+    setSymptoms(symptoms.filter(s => s !== symptom));
   };
 
   if (!isEmergencyModalOpen) return null;
@@ -255,6 +274,98 @@ export function EmergencyModal() {
               >
                 Other
               </Button>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <h3 className="text-white font-medium mb-2">Severity</h3>
+            <div className="grid grid-cols-3 gap-2">
+              <Button 
+                variant="outline" 
+                className={`bg-white/10 hover:bg-white/20 text-white py-2 px-4 rounded-lg text-sm transition-all duration-300 ${severity === 'low' ? 'bg-green-600 text-white' : ''}`}
+                onClick={() => setSeverity('low')}
+                disabled={isSubmitting}
+              >
+                Low
+              </Button>
+              <Button 
+                variant="outline" 
+                className={`bg-white/10 hover:bg-white/20 text-white py-2 px-4 rounded-lg text-sm transition-all duration-300 ${severity === 'medium' ? 'bg-yellow-600 text-white' : ''}`}
+                onClick={() => setSeverity('medium')}
+                disabled={isSubmitting}
+              >
+                Medium
+              </Button>
+              <Button 
+                variant="outline" 
+                className={`bg-white/10 hover:bg-white/20 text-white py-2 px-4 rounded-lg text-sm transition-all duration-300 ${severity === 'high' ? 'bg-red-600 text-white' : ''}`}
+                onClick={() => setSeverity('high')}
+                disabled={isSubmitting}
+              >
+                High
+              </Button>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <h3 className="text-white font-medium mb-2">Patient Count</h3>
+            <div className="flex items-center space-x-2">
+              <Button 
+                variant="outline" 
+                className="bg-white/10 hover:bg-white/20 text-white"
+                onClick={() => setPatientCount(Math.max(1, patientCount - 1))}
+                disabled={isSubmitting || patientCount <= 1}
+              >
+                -
+              </Button>
+              <span className="text-white">{patientCount}</span>
+              <Button 
+                variant="outline" 
+                className="bg-white/10 hover:bg-white/20 text-white"
+                onClick={() => setPatientCount(patientCount + 1)}
+                disabled={isSubmitting}
+              >
+                +
+              </Button>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <h3 className="text-white font-medium mb-2">Symptoms</h3>
+            <div className="flex space-x-2 mb-2">
+              <Input
+                type="text"
+                placeholder="Add symptom..."
+                value={newSymptom}
+                onChange={(e) => setNewSymptom(e.target.value)}
+                className="bg-white/10 text-white border-white/10"
+                disabled={isSubmitting}
+              />
+              <Button 
+                variant="outline" 
+                className="bg-white/10 hover:bg-white/20 text-white"
+                onClick={handleAddSymptom}
+                disabled={isSubmitting || !newSymptom.trim()}
+              >
+                Add
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {symptoms.map((symptom) => (
+                <div 
+                  key={symptom}
+                  className="bg-white/10 text-white px-3 py-1 rounded-full flex items-center space-x-2"
+                >
+                  <span>{symptom}</span>
+                  <button 
+                    onClick={() => handleRemoveSymptom(symptom)}
+                    className="text-white/60 hover:text-white"
+                    disabled={isSubmitting}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 

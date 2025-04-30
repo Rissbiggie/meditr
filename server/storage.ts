@@ -18,13 +18,17 @@ import {
   type MedicalFacility,
   type InsertMedicalFacility,
   messages,
-  UserRole
+  UserRole,
+  emergencyResources,
+  emergencyResourceTypes,
+  emergencyTypeResources,
+  emergencyResourceAssignments
 } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import { calculateDistance } from "../client/src/hooks/use-maps";
 import { db } from "./db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, asc } from "drizzle-orm";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
 
@@ -90,6 +94,12 @@ export interface IStorage {
   getAvailableTimeSlots(hospitalId: number, date: string): Promise<any[]>;
   scheduleCheckup(data: any): Promise<any>;
   getUserCheckups(userId: number): Promise<any[]>;
+
+  // Resource operations
+  getAvailableResources(): Promise<EmergencyResource[]>;
+  getResourceTypes(): Promise<EmergencyResourceType[]>;
+  getEmergencyTypeResources(): Promise<EmergencyTypeResource[]>;
+  assignResources(emergencyId: number, resourceIds: number[]): Promise<EmergencyResourceAssignment[]>;
 }
 
 export const storage = {
@@ -457,6 +467,71 @@ export const storage = {
         status: 'completed'
       }
     ];
+  },
+
+  // Resource operations
+  async getAvailableResources(): Promise<EmergencyResource[]> {
+    return await db.select()
+      .from(emergencyResources)
+      .where(eq(emergencyResources.status, 'available'))
+      .orderBy(desc(emergencyResources.lastMaintenance));
+  },
+
+  async getResourceTypes(): Promise<EmergencyResourceType[]> {
+    return await db.select()
+      .from(emergencyResourceTypes)
+      .orderBy(asc(emergencyResourceTypes.name));
+  },
+
+  async getEmergencyTypeResources(): Promise<EmergencyTypeResource[]> {
+    return await db.select()
+      .from(emergencyTypeResources)
+      .orderBy(asc(emergencyTypeResources.emergencyType), asc(emergencyTypeResources.priority));
+  },
+
+  async assignResources(emergencyId: number, resourceIds: number[]): Promise<EmergencyResourceAssignment[]> {
+    const assignments: EmergencyResourceAssignment[] = [];
+    
+    for (const resourceId of resourceIds) {
+      // Create assignment
+      const [assignment] = await db.insert(emergencyResourceAssignments)
+        .values({
+          emergencyId,
+          resourceId,
+          status: 'assigned'
+        })
+        .returning();
+
+      // Update resource status
+      await db.update(emergencyResources)
+        .set({ status: 'in_use' })
+        .where(eq(emergencyResources.id, resourceId));
+
+      // Update emergency assigned resources
+      const emergency = await db.select()
+        .from(emergencyAlerts)
+        .where(eq(emergencyAlerts.id, emergencyId))
+        .then(rows => rows[0]);
+
+      if (emergency) {
+        const assignedResources = emergency.assignedResources 
+          ? JSON.parse(emergency.assignedResources)
+          : [];
+        
+        assignedResources.push(resourceId);
+        
+        await db.update(emergencyAlerts)
+          .set({ 
+            assignedResources: JSON.stringify(assignedResources),
+            assignedAt: new Date()
+          })
+          .where(eq(emergencyAlerts.id, emergencyId));
+      }
+
+      assignments.push(assignment);
+    }
+
+    return assignments;
   }
 };
 

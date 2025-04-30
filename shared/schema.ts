@@ -164,6 +164,8 @@ export const emergencyAlerts = pgTable("emergency_alerts", {
   resolvedAt: timestamp("resolved_at"),
   assignedAt: timestamp("assigned_at"),
   priority: text("priority").notNull().default("medium"), // low, medium, high
+  requiredResources: text("required_resources"), // JSON array of required resource types
+  assignedResources: text("assigned_resources"), // JSON array of assigned resources
 });
 
 export const emergencyAlertsRelations = relations(emergencyAlerts, ({ one }) => ({
@@ -254,6 +256,48 @@ export const insertMedicalFacilitySchema = createInsertSchema(medicalFacilities)
     capacity: true,
   });
 
+// Emergency resource types
+export const emergencyResourceTypes = pgTable("emergency_resource_types", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull(), // medical, fire, police, etc.
+});
+
+// Emergency resources
+export const emergencyResources = pgTable("emergency_resources", {
+  id: serial("id").primaryKey(),
+  typeId: integer("type_id").notNull().references(() => emergencyResourceTypes.id),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("available"), // available, in_use, maintenance
+  location: text("location"),
+  latitude: text("latitude"),
+  longitude: text("longitude"),
+  capacity: integer("capacity"),
+  specializations: text("specializations"), // JSON array of specializations
+  lastMaintenance: timestamp("last_maintenance"),
+  nextMaintenance: timestamp("next_maintenance"),
+});
+
+// Emergency type to resource mapping
+export const emergencyTypeResources = pgTable("emergency_type_resources", {
+  id: serial("id").primaryKey(),
+  emergencyType: text("emergency_type").notNull(),
+  resourceTypeId: integer("resource_type_id").notNull().references(() => emergencyResourceTypes.id),
+  priority: integer("priority").notNull().default(1), // 1 = required, 2 = recommended, 3 = optional
+  quantity: integer("quantity").notNull().default(1),
+});
+
+// Emergency resource assignments
+export const emergencyResourceAssignments = pgTable("emergency_resource_assignments", {
+  id: serial("id").primaryKey(),
+  emergencyId: integer("emergency_id").notNull().references(() => emergencyAlerts.id),
+  resourceId: integer("resource_id").notNull().references(() => emergencyResources.id),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  status: text("status").notNull().default("assigned"), // assigned, en_route, on_scene, completed
+  notes: text("notes"),
+});
+
 // Types export
 export type User = z.infer<typeof userSchema>;
 export type LoginUser = z.infer<typeof loginUserSchema>;
@@ -276,3 +320,8 @@ export type InsertMedicalFacility = z.infer<typeof insertMedicalFacilitySchema>;
 
 export type LocationUpdate = typeof locationUpdates.$inferSelect;
 export type InsertLocationUpdate = z.infer<typeof insertLocationUpdateSchema>;
+
+export type EmergencyResourceType = typeof emergencyResourceTypes.$inferSelect;
+export type EmergencyResource = typeof emergencyResources.$inferSelect;
+export type EmergencyTypeResource = typeof emergencyTypeResources.$inferSelect;
+export type EmergencyResourceAssignment = typeof emergencyResourceAssignments.$inferSelect;

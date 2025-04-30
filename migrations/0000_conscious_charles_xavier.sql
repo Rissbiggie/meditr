@@ -16,7 +16,9 @@ CREATE TABLE "emergency_alerts" (
 	"emergency_type" text NOT NULL,
 	"description" text,
 	"status" text DEFAULT 'active' NOT NULL,
-	"created_at" timestamp DEFAULT now()
+	"created_at" timestamp DEFAULT now(),
+	"required_resources" text,
+	"assigned_resources" text
 );
 --> statement-breakpoint
 CREATE TABLE "emergency_contacts" (
@@ -67,6 +69,44 @@ CREATE TABLE "users" (
 	"updated_at" timestamp DEFAULT now(),
 	CONSTRAINT "users_username_unique" UNIQUE("username"),
 	CONSTRAINT "users_email_unique" UNIQUE("email")
+);
+--> statement-breakpoint
+CREATE TABLE "emergency_resource_types" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"description" text,
+	"category" text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "emergency_resources" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"type_id" integer NOT NULL REFERENCES "emergency_resource_types"("id"),
+	"name" text NOT NULL,
+	"status" text NOT NULL DEFAULT 'available',
+	"location" text,
+	"latitude" text,
+	"longitude" text,
+	"capacity" integer,
+	"specializations" text,
+	"last_maintenance" timestamp,
+	"next_maintenance" timestamp
+);
+--> statement-breakpoint
+CREATE TABLE "emergency_type_resources" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"emergency_type" text NOT NULL,
+	"resource_type_id" integer NOT NULL REFERENCES "emergency_resource_types"("id"),
+	"priority" integer NOT NULL DEFAULT 1,
+	"quantity" integer NOT NULL DEFAULT 1
+);
+--> statement-breakpoint
+CREATE TABLE "emergency_resource_assignments" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"emergency_id" integer NOT NULL REFERENCES "emergency_alerts"("id"),
+	"resource_id" integer NOT NULL REFERENCES "emergency_resources"("id"),
+	"assigned_at" timestamp DEFAULT now(),
+	"status" text NOT NULL DEFAULT 'assigned',
+	"notes" text
 );
 --> statement-breakpoint
 ALTER TABLE "emergency_alerts" ADD CONSTRAINT "emergency_alerts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
