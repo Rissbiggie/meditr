@@ -257,6 +257,30 @@ export function AdminDashboard() {
     }
   });
 
+  const deleteFacilityMutation = useMutation({
+    mutationFn: async (facilityId: number) => {
+      const response = await apiRequest('DELETE', `/api/admin/facilities/${facilityId}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete facility');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/facilities'] });
+      toast.success('Facility deleted successfully');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete facility');
+    }
+  });
+
+  const handleDeleteFacility = async (facilityId: number) => {
+    if (window.confirm('Are you sure you want to delete this facility?')) {
+      deleteFacilityMutation.mutate(facilityId);
+    }
+  };
+
   const handleCreateFacility = () => {
     if (validateFacilityForm(newFacility)) {
       createFacilityMutation.mutate(newFacility);
@@ -417,7 +441,7 @@ export function AdminDashboard() {
                         placeholder="Username"
                         value={newUser.username}
                         onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                        className={formErrors.username ? 'border-red-500' : ''}
+                        className={`text-foreground ${formErrors.username ? 'border-red-500' : ''}`}
                       />
                       {formErrors.username && (
                         <p className="text-red-500 text-sm mt-1">{formErrors.username}</p>
@@ -429,7 +453,7 @@ export function AdminDashboard() {
                         type="password"
                         value={newUser.password}
                         onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                        className={formErrors.password ? 'border-red-500' : ''}
+                        className={`text-foreground ${formErrors.password ? 'border-red-500' : ''}`}
                       />
                       {formErrors.password && (
                         <p className="text-red-500 text-sm mt-1">{formErrors.password}</p>
@@ -440,7 +464,7 @@ export function AdminDashboard() {
                         placeholder="First Name"
                         value={newUser.firstName}
                         onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
-                        className={formErrors.firstName ? 'border-red-500' : ''}
+                        className={`text-foreground ${formErrors.firstName ? 'border-red-500' : ''}`}
                       />
                       {formErrors.firstName && (
                         <p className="text-red-500 text-sm mt-1">{formErrors.firstName}</p>
@@ -451,7 +475,7 @@ export function AdminDashboard() {
                         placeholder="Last Name"
                         value={newUser.lastName}
                         onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
-                        className={formErrors.lastName ? 'border-red-500' : ''}
+                        className={`text-foreground ${formErrors.lastName ? 'border-red-500' : ''}`}
                       />
                       {formErrors.lastName && (
                         <p className="text-red-500 text-sm mt-1">{formErrors.lastName}</p>
@@ -463,7 +487,7 @@ export function AdminDashboard() {
                         type="email"
                         value={newUser.email}
                         onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                        className={formErrors.email ? 'border-red-500' : ''}
+                        className={`text-foreground ${formErrors.email ? 'border-red-500' : ''}`}
                       />
                       {formErrors.email && (
                         <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>
@@ -474,7 +498,7 @@ export function AdminDashboard() {
                         placeholder="+254712345678"
                         value={newUser.phone}
                         onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
-                        className={formErrors.phone ? 'border-red-500' : ''}
+                        className={`text-foreground ${formErrors.phone ? 'border-red-500' : ''}`}
                       />
                       {formErrors.phone && (
                         <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>
@@ -482,7 +506,7 @@ export function AdminDashboard() {
                     </div>
                     <div>
                       <select
-                        className={`border rounded p-2 w-full ${formErrors.role ? 'border-red-500' : ''}`}
+                        className={`text-foreground border rounded p-2 w-full ${formErrors.role ? 'border-red-500' : ''}`}
                         value={newUser.role}
                         onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
                       >
@@ -608,7 +632,7 @@ export function AdminDashboard() {
                       placeholder="Name"
                       value={newFacility.name}
                       onChange={(e) => setNewFacility({ ...newFacility, name: e.target.value })}
-                      className={facilityErrors.name ? 'border-red-500' : ''}
+                      className={`text-foreground ${facilityErrors.name ? 'border-red-500' : ''}`}
                     />
                     {facilityErrors.name && (
                       <p className="text-red-500 text-sm mt-1">{facilityErrors.name}</p>
@@ -619,7 +643,7 @@ export function AdminDashboard() {
                       placeholder="Address"
                       value={newFacility.address}
                       onChange={(e) => setNewFacility({ ...newFacility, address: e.target.value })}
-                      className={facilityErrors.address ? 'border-red-500' : ''}
+                      className={`text-foreground ${facilityErrors.address ? 'border-red-500' : ''}`}
                     />
                     {facilityErrors.address && (
                       <p className="text-red-500 text-sm mt-1">{facilityErrors.address}</p>
@@ -631,7 +655,7 @@ export function AdminDashboard() {
                       type="number"
                       value={newFacility.capacity}
                       onChange={(e) => setNewFacility({ ...newFacility, capacity: parseInt(e.target.value) || 0 })}
-                      className={facilityErrors.capacity ? 'border-red-500' : ''}
+                      className={`text-foreground ${facilityErrors.capacity ? 'border-red-500' : ''}`}
                     />
                     {facilityErrors.capacity && (
                       <p className="text-red-500 text-sm mt-1">{facilityErrors.capacity}</p>
@@ -642,7 +666,7 @@ export function AdminDashboard() {
                       placeholder="Type"
                       value={newFacility.type}
                       onChange={(e) => setNewFacility({ ...newFacility, type: e.target.value })}
-                      className={facilityErrors.type ? 'border-red-500' : ''}
+                      className={`text-foreground ${facilityErrors.type ? 'border-red-500' : ''}`}
                     />
                     {facilityErrors.type && (
                       <p className="text-red-500 text-sm mt-1">{facilityErrors.type}</p>
@@ -650,7 +674,7 @@ export function AdminDashboard() {
                   </div>
                 </div>
                 <Button
-                  className="mt-2"
+                  className="mt-4 w-full md:w-auto"
                   onClick={handleCreateFacility}
                   disabled={createFacilityMutation.isPending}
                 >
@@ -658,31 +682,45 @@ export function AdminDashboard() {
                 </Button>
               </div>
 
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead>Capacity</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {facilities.map((facility) => (
-                    <TableRow key={facility.id}>
-                      <TableCell>{facility.name}</TableCell>
-                      <TableCell>{facility.address}</TableCell>
-                      <TableCell>{facility.capacity}</TableCell>
-                      <TableCell>{facility.type}</TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm">Edit</Button>
-                        <Button variant="destructive" size="sm" className="ml-2">Delete</Button>
-                      </TableCell>
+              {isLoadingFacilities ? (
+                <div className="flex justify-center items-center h-32">
+                  <p>Loading facilities...</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Address</TableHead>
+                      <TableHead>Capacity</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {facilities.map((facility) => (
+                      <TableRow key={facility.id}>
+                        <TableCell>{facility.name}</TableCell>
+                        <TableCell>{facility.address}</TableCell>
+                        <TableCell>{facility.capacity}</TableCell>
+                        <TableCell>{facility.type}</TableCell>
+                        <TableCell>
+                          <Button variant="outline" size="sm">Edit</Button>
+                          <Button 
+                            variant="destructive" 
+                            size="sm" 
+                            className="ml-2"
+                            onClick={() => handleDeleteFacility(facility.id)}
+                            disabled={deleteFacilityMutation.isPending}
+                          >
+                            {deleteFacilityMutation.isPending ? 'Deleting...' : 'Delete'}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -797,7 +835,7 @@ export function AdminDashboard() {
                   placeholder="Username"
                   value={editingUser.username}
                   onChange={(e) => setEditingUser({ ...editingUser, username: e.target.value })}
-                  className={editFormErrors.username ? 'border-red-500' : ''}
+                  className={`text-foreground ${editFormErrors.username ? 'border-red-500' : ''}`}
                 />
                 {editFormErrors.username && (
                   <p className="text-red-500 text-sm mt-1">{editFormErrors.username}</p>
@@ -808,7 +846,7 @@ export function AdminDashboard() {
                   placeholder="First Name"
                   value={editingUser.firstName}
                   onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
-                  className={editFormErrors.firstName ? 'border-red-500' : ''}
+                  className={`text-foreground ${editFormErrors.firstName ? 'border-red-500' : ''}`}
                 />
                 {editFormErrors.firstName && (
                   <p className="text-red-500 text-sm mt-1">{editFormErrors.firstName}</p>
@@ -819,7 +857,7 @@ export function AdminDashboard() {
                   placeholder="Last Name"
                   value={editingUser.lastName}
                   onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
-                  className={editFormErrors.lastName ? 'border-red-500' : ''}
+                  className={`text-foreground ${editFormErrors.lastName ? 'border-red-500' : ''}`}
                 />
                 {editFormErrors.lastName && (
                   <p className="text-red-500 text-sm mt-1">{editFormErrors.lastName}</p>
@@ -831,7 +869,7 @@ export function AdminDashboard() {
                   type="email"
                   value={editingUser.email}
                   onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                  className={editFormErrors.email ? 'border-red-500' : ''}
+                  className={`text-foreground ${editFormErrors.email ? 'border-red-500' : ''}`}
                 />
                 {editFormErrors.email && (
                   <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>
@@ -842,7 +880,7 @@ export function AdminDashboard() {
                   placeholder="+254712345678"
                   value={editingUser.phone}
                   onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
-                  className={editFormErrors.phone ? 'border-red-500' : ''}
+                  className={`text-foreground ${editFormErrors.phone ? 'border-red-500' : ''}`}
                 />
                 {editFormErrors.phone && (
                   <p className="text-red-500 text-sm mt-1">{editFormErrors.phone}</p>
@@ -850,7 +888,7 @@ export function AdminDashboard() {
               </div>
               <div>
                 <select
-                  className={`border rounded p-2 w-full ${editFormErrors.role ? 'border-red-500' : ''}`}
+                  className={`text-foreground border rounded p-2 w-full ${editFormErrors.role ? 'border-red-500' : ''}`}
                   value={editingUser.role}
                   onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
                 >

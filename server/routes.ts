@@ -5,6 +5,42 @@ import { setupAuth } from "./auth";
 import { WebSocketServer } from "ws";
 import { WebSocket } from "ws";
 import { calculateDistance } from "../client/src/hooks/use-maps";
+import { emailService } from './services/emailService';
+
+// Type definitions
+interface User {
+  id: number;
+  email?: string;
+  role: string;
+}
+
+interface Emergency {
+  id: number;
+  type: string;
+  userId: number;
+}
+
+// Middleware function types
+type RequestHandler = (req: any, res: any, next: any) => void;
+
+// Authentication middleware
+const isAuthenticated: RequestHandler = (req, res, next) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  next();
+};
+
+// Admin middleware
+const isAdmin: RequestHandler = (req, res, next) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ message: "Unauthorized: Admin access required" });
+  }
+  next();
+};
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication routes
@@ -61,18 +97,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Create emergency alert
   app.post("/api/emergencies", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
     try {
-      const alert = await storage.createEmergencyAlert({
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const emergency = await storage.createEmergencyAlert({
         ...req.body,
-        userId: req.user.id
+        userId,
+        status: 'pending'
       });
-      return res.status(201).json(alert);
+
+      // Get user email for notification
+      const user = await storage.getUser(userId);
+      if (user?.email) {
+        try {
+          await emailService.sendEmergencyNotification(
+            user.email,
+            emergency.type,
+            emergency.id,
+            {
+              estimatedArrivalTime: '15-20 minutes',
+              // Add more details as needed
+            }
+          );
+        } catch (emailError) {
+          console.error('Failed to send email notification:', emailError);
+          // Don't fail the request if email fails
+        }
+      }
+
+      return res.status(201).json(emergency);
     } catch (error) {
-      console.error("Error creating emergency alert:", error);
+      console.error("Error creating emergency:", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -123,17 +181,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Mark emergency as resolved
-  app.post("/api/emergencies/:id/resolve", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
+  app.post("/api/emergencies/:id/resolve", isAdmin, async (req, res) => {
     try {
       const emergencyId = parseInt(req.params.id);
-      const resolvedEmergency = await storage.resolveEmergency(emergencyId);
-      return res.json(resolvedEmergency);
+      if (isNaN(emergencyId)) {
+        return res.status(400).json({ message: "Invalid emergency ID" });
+      }
+
+      // Get emergency details including user
+      const emergency = await storage.getEmergencyAlert(emergencyId);
+      if (!emergency) {
+        return res.status(404).json({ message: "Emergency not found" });
+      }
+
+      // Update emergency status
+      const updatedEmergency = await storage.updateEmergencyAlert(emergencyId, {
+        status: 'resolved',
+        resolvedAt: new Date()
+      });
+
+      // Send resolution notification if user has email
+      const user = await storage.getUser(emergency.userId);
+      if (user?.email) {
+        try {
+          await emailService.sendEmergencyNotification(
+            user.email,
+            emergency.type,
+            emergency.id,
+            {
+              facilityName: "Emergency has been resolved",
+              // Add any resolution details as needed
+            }
+          );
+        } catch (emailError) {
+          console.error('Failed to send resolution notification:', emailError);
+          // Don't fail the request if email fails
+        }
+      }
+
+      return res.json(updatedEmergency);
     } catch (error) {
-      console.error("Error resolving emergency:", error);
+      const err = error as Error;
+      console.error("Error resolving emergency:", err);
       return res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -527,17 +616,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin routes
-  // Check if user is admin
-  const isAdmin = (req: any, res: any, next: any) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ message: "Unauthorized: Admin access required" });
-    }
-    next();
-  };
-
   // Admin User Management
   app.get("/api/admin/users", isAdmin, async (req, res) => {
     try {
@@ -733,6 +811,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Internal server error",
         details: err.message 
       });
+    }
+  });
+
+  // Add test email endpoint
+  app.post("/api/test-email", isAdmin, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      await emailService.sendTestEmail(email);
+      return res.json({ message: "Test email sent successfully" });
+    } catch (error) {
+      console.error("Error sending test email:", error);
+      return res.status(500).json({ message: "Failed to send test email" });
     }
   });
 

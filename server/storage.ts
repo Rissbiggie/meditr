@@ -31,7 +31,7 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { calculateDistance } from "../client/src/hooks/use-maps";
 import { db } from "./db";
-import { eq, desc, and, sql, asc, gte } from "drizzle-orm";
+import { eq, desc, and, sql, asc, gte, or } from "drizzle-orm";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
 import { type EmergencyResource, type EmergencyResourceType, type EmergencyTypeResource, type EmergencyResourceAssignment } from "@shared/schema";
@@ -668,12 +668,15 @@ export const storage = {
           count: sql<number>`cast(count(*) as integer)`
         }).from(users),
         
-        // Get active emergencies
+        // Get active emergencies (both pending and active)
         db.select({
           count: sql<number>`cast(count(*) as integer)`
         })
         .from(emergencyAlerts)
-        .where(eq(emergencyAlerts.status, 'active')),
+        .where(or(
+          eq(emergencyAlerts.status, 'active'),
+          eq(emergencyAlerts.status, 'pending')
+        )),
         
         // Get total facilities
         db.select({
@@ -702,7 +705,7 @@ export const storage = {
       .groupBy(sql`${locationUpdates.timestamp}::date`)
       .orderBy(sql`${locationUpdates.timestamp}::date`);
 
-      // For now, return mock facility utilization data since we don't have the proper relationship
+      // Get facility utilization with proper null handling
       const facilityUtilization = await db.select({
         id: medicalFacilities.id,
         currentOccupancy: sql<number>`COALESCE(${medicalFacilities.currentOccupancy}, 0)`,
@@ -711,7 +714,7 @@ export const storage = {
       .from(medicalFacilities)
       .then(facilities => facilities.map(f => ({
         facilityId: f.id,
-        utilization: f.capacity > 0 ? (f.currentOccupancy / f.capacity) * 100 : 0
+        utilization: Math.min(100, Math.max(0, (f.capacity > 0 ? (f.currentOccupancy / f.capacity) * 100 : 0)))
       })));
 
       // Fill in missing days with zero counts

@@ -1,3 +1,4 @@
+/// <reference types="@types/google.maps" />
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -28,11 +29,21 @@ export function LocationMap({
 }: LocationMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const markersRef = useRef<google.maps.Marker[]>([]);
   const [mapError, setMapError] = useState<string | null>(null);
   const [infoWindow, setInfoWindow] = useState<any>(null);
   const { toast } = useToast();
 
+  // Cleanup function to remove markers
+  const clearMarkers = () => {
+    markersRef.current.forEach(marker => marker.setMap(null));
+    markersRef.current = [];
+  };
+
   useEffect(() => {
+    let scriptLoaded = false;
+    let mapInitialized = false;
+
     // Initialize map when component mounts
     if (!mapRef.current) return;
 
@@ -50,9 +61,17 @@ export function LocationMap({
       return;
     }
 
+    // Check if Google Maps is already loaded
+    if (window.google && window.google.maps) {
+      initMap();
+      return;
+    }
+
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
     script.async = true;
+    script.defer = true;
+    
     script.onerror = () => {
       const error = 'Failed to load Google Maps. Please check your internet connection.';
       console.error(error);
@@ -63,11 +82,16 @@ export function LocationMap({
         variant: "destructive",
       });
     };
-    script.onload = initMap;
+
+    script.onload = () => {
+      scriptLoaded = true;
+      initMap();
+    };
+
     document.head.appendChild(script);
 
     function initMap() {
-      if (!mapRef.current) return;
+      if (!mapRef.current || mapInitialized) return;
       
       try {
         console.log('Initializing map with coordinates:', { latitude, longitude });
@@ -76,7 +100,7 @@ export function LocationMap({
         mapInstanceRef.current = new google.maps.Map(mapRef.current, {
           center: { lat: latitude, lng: longitude },
           zoom: zoom,
-          disableDefaultUI: false, // Enable default UI
+          disableDefaultUI: false,
           styles: [
             {
               "elementType": "geometry",
@@ -173,11 +197,11 @@ export function LocationMap({
         setInfoWindow(infoWindow);
 
         // Add user location marker
-        new google.maps.Marker({
+        const userMarker = new google.maps.Marker({
           position: { lat: latitude, lng: longitude },
           map: mapInstanceRef.current,
           title: 'Your Location',
-          zIndex: 1000, // Keep user marker on top
+          zIndex: 1000,
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
             scale: 10,
@@ -187,6 +211,7 @@ export function LocationMap({
             strokeColor: '#FFFFFF',
           }
         });
+        markersRef.current.push(userMarker);
 
         // Add additional markers
         markers.forEach(marker => {
@@ -196,6 +221,7 @@ export function LocationMap({
             title: marker.title,
             icon: marker.icon,
           });
+          markersRef.current.push(markerInstance);
 
           // Add click listener to marker
           markerInstance.addListener('click', () => {
@@ -215,17 +241,7 @@ export function LocationMap({
           });
         });
 
-        // Add user controls
-        const locationButton = document.createElement("button");
-        locationButton.innerHTML = '<i class="fas fa-location-arrow"></i>';
-        locationButton.className = "custom-map-control bg-white rounded-full p-2 shadow-lg";
-        locationButton.addEventListener("click", () => {
-          mapInstanceRef.current.panTo({ lat: latitude, lng: longitude });
-          mapInstanceRef.current.setZoom(zoom);
-        });
-
-        mapInstanceRef.current.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(locationButton);
-
+        mapInitialized = true;
         setMapError(null);
       } catch (error) {
         const errorMessage = 'Error initializing map: ' + (error instanceof Error ? error.message : String(error));
@@ -240,29 +256,54 @@ export function LocationMap({
     }
 
     return () => {
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
+      if (scriptLoaded) {
+        clearMarkers();
+        if (infoWindow) {
+          infoWindow.close();
+        }
       }
     };
   }, [latitude, longitude, zoom, markers, toast, onMarkerClick]);
 
-  // Update map when position changes
+  // Update map center when position changes
   useEffect(() => {
     if (mapInstanceRef.current) {
       try {
         mapInstanceRef.current.setCenter({ lat: latitude, lng: longitude });
+        clearMarkers();
+        
+        // Re-add user location marker
+        const userMarker = new google.maps.Marker({
+          position: { lat: latitude, lng: longitude },
+          map: mapInstanceRef.current,
+          title: 'Your Location',
+          zIndex: 1000,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillOpacity: 1,
+            fillColor: '#EF4444',
+            strokeWeight: 2,
+            strokeColor: '#FFFFFF',
+          }
+        });
+        markersRef.current.push(userMarker);
+        
+        // Re-add facility markers
+        markers.forEach(marker => {
+          const markerInstance = new google.maps.Marker({
+            position: { lat: marker.lat, lng: marker.lng },
+            map: mapInstanceRef.current,
+            title: marker.title,
+            icon: marker.icon,
+          });
+          markersRef.current.push(markerInstance);
+        });
       } catch (error) {
         console.error('Error updating map center:', error);
       }
     }
-  }, [latitude, longitude]);
-
-  // Close info window when markers change
-  useEffect(() => {
-    if (infoWindow) {
-      infoWindow.close();
-    }
-  }, [markers]);
+  }, [latitude, longitude, markers]);
 
   if (mapError) {
     return (
@@ -274,7 +315,7 @@ export function LocationMap({
 
   return (
     <>
-      <style jsx global>{`
+      <style>{`
         .custom-map-control {
           margin: 10px;
           cursor: pointer;
