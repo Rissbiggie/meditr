@@ -240,6 +240,8 @@ export const medicalFacilities = pgTable("medical_facilities", {
   capacity: integer("capacity"),
   currentOccupancy: integer("current_occupancy"),
   lastUpdate: timestamp("last_update"),
+  googlePlaceId: text("google_place_id").unique(),
+  updatedAt: timestamp("updated_at").defaultNow()
 });
 
 export const insertMedicalFacilitySchema = createInsertSchema(medicalFacilities)

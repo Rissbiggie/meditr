@@ -722,8 +722,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const analytics = await storage.getSystemAnalytics();
       return res.json(analytics);
     } catch (error) {
-      console.error("Error retrieving analytics:", error);
-      return res.status(500).json({ message: "Internal server error" });
+      const err = error as Error;
+      console.error("Error retrieving analytics:", err);
+      console.error("Error details:", {
+        name: err.name,
+        message: err.message,
+        stack: err.stack
+      });
+      return res.status(500).json({ 
+        message: "Internal server error",
+        details: err.message 
+      });
     }
   });
 

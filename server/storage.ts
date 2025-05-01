@@ -35,9 +35,11 @@ import { eq, desc, and, sql, asc, gte } from "drizzle-orm";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
 import { type EmergencyResource, type EmergencyResourceType, type EmergencyTypeResource, type EmergencyResourceAssignment } from "@shared/schema";
+import { Client } from "@googlemaps/google-maps-services-js";
 
 const PostgresSessionStore = connectPg(session);
 const MemoryStore = createMemoryStore(session);
+const placesClient = new Client({});
 
 export interface IStorage {
   // User operations
@@ -148,6 +150,8 @@ export interface IStorage {
     timestamp: Date;
     source: string;
   }): Promise<typeof locationUpdates.$inferInsert>;
+
+  syncNearbyFacilities(latitude: number, longitude: number, radius?: number): Promise<void>;
 }
 
 export const storage = {
@@ -406,37 +410,25 @@ export const storage = {
   },
   
   async getNearbyFacilities(lat: number, lng: number): Promise<MedicalFacility[]> {
-    // Get all facilities
-    const allFacilities = await db.select().from(medicalFacilities);
+    // First sync with Google Places API
+    await this.syncNearbyFacilities(lat, lng);
     
-    // Filter and sort by distance
-    return allFacilities
-      .filter(facility => {
-        const distance = calculateDistance(
-          lat, 
-          lng, 
-          parseFloat(facility.latitude), 
-          parseFloat(facility.longitude)
-        );
-        
-        return distance <= 10; // Within 10km
-      })
-      .sort((a, b) => {
-        // Sort by distance
-        const distA = calculateDistance(
-          lat, 
-          lng, 
-          parseFloat(a.latitude), 
-          parseFloat(a.longitude)
-        );
-        const distB = calculateDistance(
-          lat, 
-          lng, 
-          parseFloat(b.latitude), 
-          parseFloat(b.longitude)
-        );
-        return distA - distB;
-      });
+    // Then get facilities from our database
+    const facilities = await db.select()
+      .from(medicalFacilities)
+      .where(
+        sql`ST_DWithin(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          ST_MakePoint(${medicalFacilities.longitude}, ${medicalFacilities.latitude})::geography,
+          ${5000}
+        )`
+      );
+    
+    return facilities.sort((a, b) => {
+      const distA = calculateDistance(lat, lng, parseFloat(a.latitude), parseFloat(a.longitude));
+      const distB = calculateDistance(lat, lng, parseFloat(b.latitude), parseFloat(b.longitude));
+      return distA - distB;
+    });
   },
 
   async getUserCount(): Promise<number> {
@@ -698,16 +690,17 @@ export const storage = {
       .groupBy(emergencyAlerts.emergencyType);
 
       // Get user activity for the last 7 days
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
       const userActivity = await db.select({
-        date: sql<string>`to_char(date_trunc('day', ${locationUpdates.timestamp}), 'YYYY-MM-DD')`,
+        date: sql<string>`to_char(${locationUpdates.timestamp}::date, 'YYYY-MM-DD')`,
         count: sql<number>`cast(count(distinct ${locationUpdates.userId}) as integer)`
       })
       .from(locationUpdates)
-      .where(
-        sql`${locationUpdates.timestamp} >= now() - interval '7 days'`
-      )
-      .groupBy(sql`date_trunc('day', ${locationUpdates.timestamp})`)
-      .orderBy(sql`date_trunc('day', ${locationUpdates.timestamp})`);
+      .where(gte(locationUpdates.timestamp, sevenDaysAgo))
+      .groupBy(sql`${locationUpdates.timestamp}::date`)
+      .orderBy(sql`${locationUpdates.timestamp}::date`);
 
       // For now, return mock facility utilization data since we don't have the proper relationship
       const facilityUtilization = await db.select({
@@ -721,6 +714,19 @@ export const storage = {
         utilization: f.capacity > 0 ? (f.currentOccupancy / f.capacity) * 100 : 0
       })));
 
+      // Fill in missing days with zero counts
+      const activityMap = new Map(userActivity.map(ua => [ua.date, ua.count]));
+      const filledActivity = [];
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(sevenDaysAgo);
+        date.setDate(date.getDate() + i);
+        const dateStr = date.toISOString().split('T')[0];
+        filledActivity.push({
+          date: dateStr,
+          count: activityMap.get(dateStr) || 0
+        });
+      }
+
       return {
         totalUsers: totalUsersResult[0]?.count || 0,
         activeEmergencies: activeEmergenciesResult[0]?.count || 0,
@@ -729,10 +735,7 @@ export const storage = {
           type: et.type || 'Unknown',
           count: et.count
         })),
-        userActivity: userActivity.map(ua => ({
-          date: ua.date,
-          count: ua.count
-        })),
+        userActivity: filledActivity,
         facilityUtilization
       };
     } catch (error) {
@@ -820,6 +823,69 @@ export const storage = {
 
   async deleteFacility(id: number) {
     await db.delete(medicalFacilities).where(eq(medicalFacilities.id, id));
+  },
+
+  async syncNearbyFacilities(latitude: number, longitude: number, radius: number = 5000): Promise<void> {
+    try {
+      // Search for hospitals and medical facilities
+      const response = await placesClient.placesNearby({
+        params: {
+          location: { lat: latitude, lng: longitude },
+          radius, // 5km radius by default
+          type: "hospital",
+          key: process.env.GOOGLE_MAPS_API_KEY || ""
+        }
+      });
+
+      if (response.data.results) {
+        for (const place of response.data.results) {
+          // Check if facility already exists
+          const [existingFacility] = await db.select()
+            .from(medicalFacilities)
+            .where(eq(medicalFacilities.googlePlaceId, place.place_id));
+
+          if (!existingFacility) {
+            // Get place details for more information
+            const details = await placesClient.placeDetails({
+              params: {
+                place_id: place.place_id,
+                fields: ["name", "formatted_address", "formatted_phone_number", "opening_hours", "rating"],
+                key: process.env.GOOGLE_MAPS_API_KEY || ""
+              }
+            });
+
+            // Insert new facility
+            await db.insert(medicalFacilities).values({
+              name: place.name,
+              type: "Hospital",
+              address: details.data.result.formatted_address || place.vicinity || "",
+              latitude: place.geometry.location.lat.toString(),
+              longitude: place.geometry.location.lng.toString(),
+              phone: details.data.result.formatted_phone_number || "",
+              openHours: details.data.result.opening_hours?.weekday_text?.join("; ") || "24/7",
+              rating: details.data.result.rating?.toString() || "",
+              googlePlaceId: place.place_id,
+              capacity: 100, // Default capacity
+              currentOccupancy: 0 // Default occupancy
+            });
+          } else {
+            // Update existing facility
+            await db.update(medicalFacilities)
+              .set({
+                name: place.name,
+                address: place.vicinity || existingFacility.address,
+                latitude: place.geometry.location.lat.toString(),
+                longitude: place.geometry.location.lng.toString(),
+                updatedAt: new Date()
+              })
+              .where(eq(medicalFacilities.googlePlaceId, place.place_id));
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error syncing nearby facilities:", error);
+      throw new Error("Failed to sync nearby facilities");
+    }
   }
 };
 
@@ -1078,37 +1144,25 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getNearbyFacilities(lat: number, lng: number): Promise<MedicalFacility[]> {
-    // Get all facilities
-    const allFacilities = await db.select().from(medicalFacilities);
+    // First sync with Google Places API
+    await this.syncNearbyFacilities(lat, lng);
     
-    // Filter and sort by distance
-    return allFacilities
-      .filter(facility => {
-        const distance = calculateDistance(
-          lat, 
-          lng, 
-          parseFloat(facility.latitude), 
-          parseFloat(facility.longitude)
-        );
-        
-        return distance <= 10; // Within 10km
-      })
-      .sort((a, b) => {
-        // Sort by distance
-        const distA = calculateDistance(
-          lat, 
-          lng, 
-          parseFloat(a.latitude), 
-          parseFloat(a.longitude)
-        );
-        const distB = calculateDistance(
-          lat, 
-          lng, 
-          parseFloat(b.latitude), 
-          parseFloat(b.longitude)
-        );
-        return distA - distB;
-      });
+    // Then get facilities from our database
+    const facilities = await db.select()
+      .from(medicalFacilities)
+      .where(
+        sql`ST_DWithin(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          ST_MakePoint(${medicalFacilities.longitude}, ${medicalFacilities.latitude})::geography,
+          ${5000}
+        )`
+      );
+    
+    return facilities.sort((a, b) => {
+      const distA = calculateDistance(lat, lng, parseFloat(a.latitude), parseFloat(a.longitude));
+      const distB = calculateDistance(lat, lng, parseFloat(b.latitude), parseFloat(b.longitude));
+      return distA - distB;
+    });
   }
   
   // Seed the database with sample data if needed
@@ -1180,6 +1234,69 @@ export class DatabaseStorage implements IStorage {
       }
     } catch (error) {
       console.error("Error seeding database:", error);
+    }
+  }
+
+  async syncNearbyFacilities(latitude: number, longitude: number, radius: number = 5000): Promise<void> {
+    try {
+      // Search for hospitals and medical facilities
+      const response = await placesClient.placesNearby({
+        params: {
+          location: { lat: latitude, lng: longitude },
+          radius, // 5km radius by default
+          type: "hospital",
+          key: process.env.GOOGLE_MAPS_API_KEY || ""
+        }
+      });
+
+      if (response.data.results) {
+        for (const place of response.data.results) {
+          // Check if facility already exists
+          const [existingFacility] = await db.select()
+            .from(medicalFacilities)
+            .where(eq(medicalFacilities.googlePlaceId, place.place_id));
+
+          if (!existingFacility) {
+            // Get place details for more information
+            const details = await placesClient.placeDetails({
+              params: {
+                place_id: place.place_id,
+                fields: ["name", "formatted_address", "formatted_phone_number", "opening_hours", "rating"],
+                key: process.env.GOOGLE_MAPS_API_KEY || ""
+              }
+            });
+
+            // Insert new facility
+            await db.insert(medicalFacilities).values({
+              name: place.name,
+              type: "Hospital",
+              address: details.data.result.formatted_address || place.vicinity || "",
+              latitude: place.geometry.location.lat.toString(),
+              longitude: place.geometry.location.lng.toString(),
+              phone: details.data.result.formatted_phone_number || "",
+              openHours: details.data.result.opening_hours?.weekday_text?.join("; ") || "24/7",
+              rating: details.data.result.rating?.toString() || "",
+              googlePlaceId: place.place_id,
+              capacity: 100, // Default capacity
+              currentOccupancy: 0 // Default occupancy
+            });
+          } else {
+            // Update existing facility
+            await db.update(medicalFacilities)
+              .set({
+                name: place.name,
+                address: place.vicinity || existingFacility.address,
+                latitude: place.geometry.location.lat.toString(),
+                longitude: place.geometry.location.lng.toString(),
+                updatedAt: new Date()
+              })
+              .where(eq(medicalFacilities.googlePlaceId, place.place_id));
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error syncing nearby facilities:", error);
+      throw new Error("Failed to sync nearby facilities");
     }
   }
 }
