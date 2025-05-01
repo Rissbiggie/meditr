@@ -85,6 +85,9 @@ export function EditProfileForm({ onClose }: { onClose: () => void }) {
           type="tel"
           value={formData.phone}
           onChange={handleChange}
+          placeholder="+254712345678"
+          pattern="^\+254[17]\d{8}$"
+          title="Invalid Kenyan phone number format. Use +254 followed by 7 or 1 and 8 digits"
           required
         />
       </div>

@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/lib/protected-route";
 import { UserRole } from "@shared/schema";
 import { useEffect } from "react";
 import { connectWebSocket } from "@/lib/websocket";
+import { AdminDashboard } from "@/components/AdminDashboard";
 
 // Lazy load components
 const HomePage = lazy(() => import("@/pages/home-page"));
@@ -50,7 +51,7 @@ export default function App() {
               <Route path="/verify-email/:token" component={VerifyEmailPage} />
               <Route path="/reset-password/:token" component={ResetPasswordPage} />
               <Route path="/forgot-password" component={ForgotPasswordPage} />
-              <ProtectedRoute path="/" component={HomePage} />
+              <Route path="/" component={HomePage} />
               <ProtectedRoute path="/dashboard" component={DashboardPage} />
               <ProtectedRoute path="/services" component={ServicesPage} />
               <ProtectedRoute path="/settings" component={SettingsPage} />
@@ -60,7 +61,7 @@ export default function App() {
               <ProtectedRoute path="/appointments" component={AppointmentsPage} />
               <ProtectedRoute 
                 path="/admin" 
-                component={AdminPage} 
+                component={AdminDashboard} 
                 allowedRoles={[UserRole.ADMIN]} 
               />
               <ProtectedRoute 

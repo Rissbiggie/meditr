@@ -8,6 +8,15 @@ import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/hooks/use-auth";
 import { EmergencyModal } from "@/components/modals/emergency-modal";
 import { User, Mail, ChevronRight, LogOut } from "lucide-react";
+import { EmergencyContacts } from "@/components/preferences/emergency-contacts";
+import { MedicalInformation } from "@/components/preferences/medical-information";
+import { PreferredHospitals } from "@/components/preferences/preferred-hospitals";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function SettingsPage() {
   const { user, logoutMutation } = useAuth();
@@ -19,6 +28,8 @@ export default function SettingsPage() {
     smsNotifications: false
   });
 
+  const [activeDialog, setActiveDialog] = useState<string | null>(null);
+
   const handleSettingToggle = (setting: keyof typeof settings) => {
     setSettings(prev => ({
       ...prev,
@@ -28,6 +39,14 @@ export default function SettingsPage() {
 
   const handleLogout = () => {
     logoutMutation.mutate();
+  };
+
+  const handleOpenDialog = (dialog: string) => {
+    setActiveDialog(dialog);
+  };
+
+  const handleCloseDialog = () => {
+    setActiveDialog(null);
   };
 
   return (
@@ -100,15 +119,24 @@ export default function SettingsPage() {
             <CardContent className="p-4">
               <h3 className="text-white font-semibold mb-3">Emergency Preferences</h3>
               <div className="space-y-3">
-                <Button className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left">
+                <Button 
+                  className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left"
+                  onClick={() => handleOpenDialog('emergency-contacts')}
+                >
                   <span className="text-white font-medium text-sm">Emergency Contacts</span>
                   <ChevronRight className="text-white/60" />
                 </Button>
-                <Button className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left">
+                <Button 
+                  className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left"
+                  onClick={() => handleOpenDialog('medical-information')}
+                >
                   <span className="text-white font-medium text-sm">Medical Information</span>
                   <ChevronRight className="text-white/60" />
                 </Button>
-                <Button className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left">
+                <Button 
+                  className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left"
+                  onClick={() => handleOpenDialog('preferred-hospitals')}
+                >
                   <span className="text-white font-medium text-sm">Preferred Hospitals</span>
                   <ChevronRight className="text-white/60" />
                 </Button>
@@ -121,19 +149,31 @@ export default function SettingsPage() {
             <CardContent className="p-4">
               <h3 className="text-white font-semibold mb-3">Support</h3>
               <div className="space-y-3">
-                <Button className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left">
+                <Button 
+                  className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left"
+                  onClick={() => setLocation('/help')}
+                >
                   <span className="text-white font-medium text-sm">Help Center</span>
                   <ChevronRight className="text-white/60" />
                 </Button>
-                <Button className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left">
+                <Button 
+                  className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left"
+                  onClick={() => setLocation('/support')}
+                >
                   <span className="text-white font-medium text-sm">Contact Support</span>
                   <ChevronRight className="text-white/60" />
                 </Button>
-                <Button className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left">
+                <Button 
+                  className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left"
+                  onClick={() => setLocation('/privacy')}
+                >
                   <span className="text-white font-medium text-sm">Privacy Policy</span>
                   <ChevronRight className="text-white/60" />
                 </Button>
-                <Button className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left">
+                <Button 
+                  className="flex items-center justify-between w-full bg-white/5 hover:bg-white/10 p-3 rounded-lg text-left"
+                  onClick={() => setLocation('/terms')}
+                >
                   <span className="text-white font-medium text-sm">Terms of Service</span>
                   <ChevronRight className="text-white/60" />
                 </Button>
@@ -150,6 +190,36 @@ export default function SettingsPage() {
           </Button>
         </div>
       </main>
+
+      {/* Emergency Contacts Dialog */}
+      <Dialog open={activeDialog === 'emergency-contacts'} onOpenChange={handleCloseDialog}>
+        <DialogContent className="bg-primary border-none text-white max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Emergency Contacts</DialogTitle>
+          </DialogHeader>
+          <EmergencyContacts />
+        </DialogContent>
+      </Dialog>
+
+      {/* Medical Information Dialog */}
+      <Dialog open={activeDialog === 'medical-information'} onOpenChange={handleCloseDialog}>
+        <DialogContent className="bg-primary border-none text-white max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Medical Information</DialogTitle>
+          </DialogHeader>
+          <MedicalInformation />
+        </DialogContent>
+      </Dialog>
+
+      {/* Preferred Hospitals Dialog */}
+      <Dialog open={activeDialog === 'preferred-hospitals'} onOpenChange={handleCloseDialog}>
+        <DialogContent className="bg-primary border-none text-white max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Preferred Hospitals</DialogTitle>
+          </DialogHeader>
+          <PreferredHospitals />
+        </DialogContent>
+      </Dialog>
 
       <Navbar />
       <EmergencyModal />

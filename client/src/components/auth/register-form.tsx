@@ -19,7 +19,10 @@ const formSchema = z.object({
   lastName: z.string().min(1, "Last name is required"),
   username: z.string().min(3, "Username must be at least 3 characters"),
   email: z.string().email("Invalid email address"),
-  phone: z.string().min(10, "Phone number is required"),
+  phone: z.string()
+    .min(12, "Phone number must be at least 12 digits")
+    .max(13, "Phone number must be at most 13 digits")
+    .regex(/^\+254[17]\d{8}$/, "Invalid Kenyan phone number format. Use +254 followed by 7 or 1 and 8 digits"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string(),
   agreeTerms: z.boolean().refine(val => val === true, {
@@ -147,7 +150,7 @@ export function RegisterForm({ onSubmit, isPending }: RegisterFormProps) {
                   <Input
                     {...field} 
                     type="tel" 
-                    placeholder="+1 (555) 000-0000"
+                    placeholder="+254712345678"
                     className="w-full bg-white/20 rounded-lg px-4 py-3 text-white border border-white/10 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary"
                   />
                 </FormControl>

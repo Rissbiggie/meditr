@@ -526,6 +526,170 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin routes
+  // Check if user is admin
+  const isAdmin = (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Unauthorized: Admin access required" });
+    }
+    next();
+  };
+
+  // Admin User Management
+  app.get("/api/admin/users", isAdmin, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      return res.json(users);
+    } catch (error) {
+      console.error("Error retrieving users:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/users", isAdmin, async (req, res) => {
+    try {
+      // Validate required fields
+      const { username, password, firstName, lastName, email, phone, role } = req.body;
+      if (!username || !password || !firstName || !lastName || !email || !phone || !role) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+
+      // Check if username or email already exists
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+
+      const existingEmail = await storage.getUserByEmail(email);
+      if (existingEmail) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
+
+      const user = await storage.createUser(req.body);
+      return res.status(201).json(user);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.put("/api/admin/users/:id", isAdmin, async (req, res) => {
+    try {
+      const user = await storage.updateUser(req.params.id, req.body);
+      return res.json(user);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", isAdmin, async (req, res) => {
+    try {
+      await storage.deleteUser(req.params.id);
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Admin Emergency Management
+  app.get("/api/admin/emergencies", isAdmin, async (req, res) => {
+    try {
+      const emergencies = await storage.getAllEmergencies();
+      return res.json(emergencies);
+    } catch (error) {
+      console.error("Error retrieving emergencies:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.put("/api/admin/emergencies/:id", isAdmin, async (req, res) => {
+    try {
+      const emergency = await storage.updateEmergency(req.params.id, req.body);
+      return res.json(emergency);
+    } catch (error) {
+      console.error("Error updating emergency:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/emergencies/:id/assign-resources", isAdmin, async (req, res) => {
+    try {
+      const assignments = await storage.assignResources(req.params.id, req.body.resourceIds);
+      return res.json(assignments);
+    } catch (error) {
+      console.error("Error assigning resources:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Admin Facility Management
+  app.get("/api/admin/facilities", isAdmin, async (req, res) => {
+    try {
+      const facilities = await storage.getAllFacilities();
+      return res.json(facilities);
+    } catch (error) {
+      console.error("Error retrieving facilities:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/facilities", isAdmin, async (req, res) => {
+    try {
+      // Validate required fields
+      const { name, address, capacity, type } = req.body;
+      if (!name || !address || !capacity || !type) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+
+      // Validate capacity is a positive number
+      if (typeof capacity !== 'number' || capacity <= 0) {
+        return res.status(400).json({ message: "Capacity must be a positive number" });
+      }
+
+      const facility = await storage.createFacility(req.body);
+      return res.status(201).json(facility);
+    } catch (error) {
+      console.error("Error creating facility:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.put("/api/admin/facilities/:id", isAdmin, async (req, res) => {
+    try {
+      const facility = await storage.updateFacility(req.params.id, req.body);
+      return res.json(facility);
+    } catch (error) {
+      console.error("Error updating facility:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/admin/facilities/:id", isAdmin, async (req, res) => {
+    try {
+      await storage.deleteFacility(req.params.id);
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting facility:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Admin Analytics
+  app.get("/api/admin/analytics", isAdmin, async (req, res) => {
+    try {
+      const analytics = await storage.getSystemAnalytics();
+      return res.json(analytics);
+    } catch (error) {
+      console.error("Error retrieving analytics:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // Create HTTP server
   const httpServer = createServer(app);
 

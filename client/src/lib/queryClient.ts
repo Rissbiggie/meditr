@@ -26,12 +26,14 @@ export async function apiRequest(
       credentials: "include",
     });
 
-    // Only check status, don't consume the body
+    // Check if the response is not ok
     if (!res.ok) {
+      // Try to parse the error message from the response
       const errorData = await res.json().catch(() => ({ message: res.statusText }));
       throw new Error(errorData.message || `${res.status}: ${res.statusText}`);
     }
 
+    // Return the response for further processing
     return res;
   } catch (error) {
     console.error("API Request error:", error);
@@ -63,11 +65,19 @@ export const getQueryFn: <T>(options: {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFn({ on401: "throw" }),
+      queryFn: getQueryFn({ on401: "returnNull" }),
       refetchInterval: false,
       refetchOnWindowFocus: true,
-      staleTime: 0,
-      retry: false,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: (failureCount, error) => {
+        // Don't retry on 401/403 errors
+        if (error instanceof Error && 
+            (error.message.includes('401') || error.message.includes('403'))) {
+          return false;
+        }
+        // Retry up to 3 times for other errors
+        return failureCount < 3;
+      },
     },
     mutations: {
       retry: false,

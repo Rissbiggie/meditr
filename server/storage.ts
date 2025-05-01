@@ -100,6 +100,30 @@ export interface IStorage {
   getResourceTypes(): Promise<EmergencyResourceType[]>;
   getEmergencyTypeResources(): Promise<EmergencyTypeResource[]>;
   assignResources(emergencyId: number, resourceIds: number[]): Promise<EmergencyResourceAssignment[]>;
+
+  // Admin User Management
+  updateUser(id: number, userData: Partial<InsertUser>): Promise<User>;
+  deleteUser(id: number): Promise<void>;
+  
+  // Admin Emergency Management
+  getAllEmergencies(): Promise<EmergencyAlert[]>;
+  updateEmergency(id: number, emergencyData: Partial<InsertEmergencyAlert>): Promise<EmergencyAlert>;
+  
+  // Admin Facility Management
+  getAllFacilities(): Promise<MedicalFacility[]>;
+  createFacility(facilityData: InsertMedicalFacility): Promise<MedicalFacility>;
+  updateFacility(id: number, facilityData: Partial<InsertMedicalFacility>): Promise<MedicalFacility>;
+  deleteFacility(id: number): Promise<void>;
+  
+  // Admin Analytics
+  getSystemAnalytics(): Promise<{
+    totalUsers: number;
+    activeEmergencies: number;
+    totalFacilities: number;
+    emergencyTypes: { type: string; count: number }[];
+    userActivity: { date: string; count: number }[];
+    facilityUtilization: { facilityId: number; utilization: number }[];
+  }>;
 }
 
 export const storage = {
@@ -532,6 +556,106 @@ export const storage = {
     }
 
     return assignments;
+  },
+
+  // Admin User Management
+  async updateUser(id: number, userData: Partial<InsertUser>): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set(userData)
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  },
+
+  async deleteUser(id: number): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
+  },
+  
+  // Admin Emergency Management
+  async getAllEmergencies(): Promise<EmergencyAlert[]> {
+    return await db.select().from(emergencyAlerts).orderBy(desc(emergencyAlerts.createdAt));
+  },
+
+  async updateEmergency(id: number, emergencyData: Partial<InsertEmergencyAlert>): Promise<EmergencyAlert> {
+    const [emergency] = await db
+      .update(emergencyAlerts)
+      .set(emergencyData)
+      .where(eq(emergencyAlerts.id, id))
+      .returning();
+    return emergency;
+  },
+  
+  // Admin Facility Management
+  async getAllFacilities(): Promise<MedicalFacility[]> {
+    return await db.select().from(medicalFacilities).orderBy(asc(medicalFacilities.name));
+  },
+
+  async createFacility(facilityData: InsertMedicalFacility): Promise<MedicalFacility> {
+    const [facility] = await db
+      .insert(medicalFacilities)
+      .values(facilityData)
+      .returning();
+    return facility;
+  },
+
+  async updateFacility(id: number, facilityData: Partial<InsertMedicalFacility>): Promise<MedicalFacility> {
+    const [facility] = await db
+      .update(medicalFacilities)
+      .set(facilityData)
+      .where(eq(medicalFacilities.id, id))
+      .returning();
+    return facility;
+  },
+
+  async deleteFacility(id: number): Promise<void> {
+    await db.delete(medicalFacilities).where(eq(medicalFacilities.id, id));
+  },
+  
+  // Admin Analytics
+  async getSystemAnalytics(): Promise<{
+    totalUsers: number;
+    activeEmergencies: number;
+    totalFacilities: number;
+    emergencyTypes: { type: string; count: number }[];
+    userActivity: { date: string; count: number }[];
+    facilityUtilization: { facilityId: number; utilization: number }[];
+  }> {
+    const [
+      totalUsers,
+      activeEmergencies,
+      totalFacilities,
+      emergencyTypes,
+      userActivity,
+      facilityUtilization
+    ] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(users),
+      db.select({ count: sql<number>`count(*)` }).from(emergencyAlerts).where(eq(emergencyAlerts.status, 'active')),
+      db.select({ count: sql<number>`count(*)` }).from(medicalFacilities),
+      db.select({
+        type: emergencyAlerts.type,
+        count: sql<number>`count(*)`
+      }).from(emergencyAlerts).groupBy(emergencyAlerts.type),
+      db.select({
+        date: sql<string>`date_trunc('day', ${locationUpdates.timestamp})`,
+        count: sql<number>`count(distinct ${locationUpdates.userId})`
+      }).from(locationUpdates).groupBy(sql`date_trunc('day', ${locationUpdates.timestamp})`),
+      db.select({
+        facilityId: medicalFacilities.id,
+        utilization: sql<number>`count(${emergencyAlerts.id})::float / (select count(*) from ${emergencyAlerts}) * 100`
+      }).from(medicalFacilities)
+        .leftJoin(emergencyAlerts, eq(emergencyAlerts.facilityId, medicalFacilities.id))
+        .groupBy(medicalFacilities.id)
+    ]);
+
+    return {
+      totalUsers: totalUsers[0].count,
+      activeEmergencies: activeEmergencies[0].count,
+      totalFacilities: totalFacilities[0].count,
+      emergencyTypes,
+      userActivity,
+      facilityUtilization
+    };
   }
 };
 

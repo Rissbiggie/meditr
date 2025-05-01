@@ -4,22 +4,39 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { User, EmergencyAlert, AmbulanceUnit } from "@shared/schema";
 import { EmergencyModal } from "@/components/modals/emergency-modal";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function AdminPage() {
   // Query for active emergencies
-  const { data: activeEmergencies } = useQuery<EmergencyAlert[] | null>({
+  const { data: activeEmergencies = [], isLoading: isLoadingEmergencies } = useQuery<EmergencyAlert[]>({
     queryKey: ['/api/emergencies/active'],
+    queryFn: () => apiRequest('GET', '/api/emergencies/active').then(res => res.json()),
   });
 
   // Query for ambulance units
-  const { data: ambulanceUnits } = useQuery<AmbulanceUnit[] | null>({
+  const { data: ambulanceUnits = [], isLoading: isLoadingAmbulances } = useQuery<AmbulanceUnit[]>({
     queryKey: ['/api/ambulances'],
+    queryFn: () => apiRequest('GET', '/api/ambulances').then(res => res.json()),
   });
 
   // Query for users
-  const { data: users } = useQuery<User[] | null>({
+  const { data: users = [], isLoading: isLoadingUsers } = useQuery<User[]>({
     queryKey: ['/api/users'],
+    queryFn: () => apiRequest('GET', '/api/users').then(res => res.json()),
   });
+
+  const isLoading = isLoadingEmergencies || isLoadingAmbulances || isLoadingUsers;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-primary">
+        <AppHeader title="Admin Dashboard" />
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-primary pb-20">
@@ -34,21 +51,21 @@ export default function AdminPage() {
               <CardContent className="p-4 text-center">
                 <div className="text-secondary text-3xl mb-1"><i className="fas fa-ambulance"></i></div>
                 <p className="text-white/80 text-xs">Active Units</p>
-                <p className="text-white font-semibold text-xl">{ambulanceUnits?.filter(unit => unit.status === "available").length || 0}</p>
+                <p className="text-white font-semibold text-xl">{ambulanceUnits.filter(unit => unit.status === "available").length}</p>
               </CardContent>
             </Card>
             <Card className="bg-white/10 rounded-xl border-none">
               <CardContent className="p-4 text-center">
                 <div className="text-[#EF4444] text-3xl mb-1"><i className="fas fa-exclamation-circle"></i></div>
                 <p className="text-white/80 text-xs">Active Emergencies</p>
-                <p className="text-white font-semibold text-xl">{activeEmergencies?.length || 0}</p>
+                <p className="text-white font-semibold text-xl">{activeEmergencies.length}</p>
               </CardContent>
             </Card>
             <Card className="bg-white/10 rounded-xl border-none">
               <CardContent className="p-4 text-center">
                 <div className="text-secondary text-3xl mb-1"><i className="fas fa-user-md"></i></div>
                 <p className="text-white/80 text-xs">Response Teams</p>
-                <p className="text-white font-semibold text-xl">{users?.filter(user => user.role === "response_team").length || 0}</p>
+                <p className="text-white font-semibold text-xl">{users.filter(user => user.role === "response_team").length}</p>
               </CardContent>
             </Card>
             <Card className="bg-white/10 rounded-xl border-none">
@@ -111,15 +128,15 @@ export default function AdminPage() {
               <div className="grid grid-cols-3 gap-3 mb-3">
                 <div className="bg-white/5 p-3 rounded-lg text-center">
                   <p className="text-white/80 text-xs mb-1">Medical</p>
-                  <p className="text-white font-semibold">{activeEmergencies?.filter(e => e.emergencyType === "Medical").length || 0}</p>
+                  <p className="text-white font-semibold">{activeEmergencies.filter(e => e.emergencyType === "Medical").length}</p>
                 </div>
                 <div className="bg-white/5 p-3 rounded-lg text-center">
                   <p className="text-white/80 text-xs mb-1">Accidents</p>
-                  <p className="text-white font-semibold">{activeEmergencies?.filter(e => e.emergencyType === "Accident").length || 0}</p>
+                  <p className="text-white font-semibold">{activeEmergencies.filter(e => e.emergencyType === "Accident").length}</p>
                 </div>
                 <div className="bg-white/5 p-3 rounded-lg text-center">
                   <p className="text-white/80 text-xs mb-1">Fire</p>
-                  <p className="text-white font-semibold">{activeEmergencies?.filter(e => e.emergencyType === "Fire").length || 0}</p>
+                  <p className="text-white font-semibold">{activeEmergencies.filter(e => e.emergencyType === "Fire").length}</p>
                 </div>
               </div>
             </CardContent>
@@ -132,7 +149,7 @@ export default function AdminPage() {
                 <Button variant="link" className="text-secondary text-sm">View All</Button>
               </div>
               <div className="space-y-3">
-                {users && users.length > 0 ? (
+                {users.length > 0 ? (
                   users.slice(0, 3).map((user) => (
                     <div key={user.id} className="flex items-center bg-white/5 p-3 rounded-lg">
                       <div className="bg-white/10 p-2 rounded-full mr-3">
