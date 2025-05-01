@@ -1,88 +1,90 @@
+import { toast } from 'sonner';
+
 // WebSocket connection management
-let socket: WebSocket | null = null;
+let ws: WebSocket | null = null;
 let reconnectAttempts = 0;
-const maxReconnectAttempts = 5;
-const reconnectDelay = 3000; // 3 seconds
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = 3000; // 3 seconds
 const messageListeners: ((data: any) => void)[] = [];
 
 export function connectWebSocket() {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-    console.log('WebSocket is already connected or connecting');
+  if (ws?.readyState === WebSocket.OPEN) {
     return;
   }
 
   try {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    socket = new WebSocket(wsUrl);
+    
+    ws = new WebSocket(wsUrl);
 
-    socket.onopen = () => {
-      console.log('WebSocket connection established');
+    ws.onopen = () => {
+      console.log('WebSocket connected');
       reconnectAttempts = 0;
     };
 
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        // Notify all listeners of the new message
-        messageListeners.forEach(listener => listener(data));
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        setTimeout(() => {
+          reconnectAttempts++;
+          connectWebSocket();
+        }, RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1));
+      } else {
+        toast.error('Lost connection to server. Please refresh the page.');
       }
     };
 
-    socket.onclose = (event) => {
-      console.log(`WebSocket connection closed: ${event.code} ${event.reason}`);
-      socket = null;
-
-      // Attempt to reconnect if not a normal closure
-      if (event.code !== 1000) {
-        attemptReconnect();
-      }
-    };
-
-    socket.onerror = (error) => {
+    ws.onerror = (error) => {
       console.error('WebSocket error:', error);
+      toast.error('Connection error. Please check your internet connection.');
     };
-  } catch (error) {
-    console.error('Error connecting to WebSocket:', error);
-    attemptReconnect();
-  }
-}
 
-function attemptReconnect() {
-  if (reconnectAttempts < maxReconnectAttempts) {
-    reconnectAttempts++;
-    console.log(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`);
-    setTimeout(connectWebSocket, reconnectDelay);
-  } else {
-    console.error('Max reconnect attempts reached.');
+  } catch (error) {
+    console.error('Failed to create WebSocket connection:', error);
+    toast.error('Failed to establish connection. Please try again later.');
   }
 }
 
 export function sendWSMessage(type: string, data: any) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    console.error('WebSocket is not connected');
-    connectWebSocket(); // Try to connect
-    return false;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    connectWebSocket();
+    setTimeout(() => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type, data }));
+      } else {
+        toast.error('Failed to send message. Please try again.');
+      }
+    }, 1000);
+    return;
   }
 
   try {
-    socket.send(JSON.stringify({ type, ...data }));
-    return true;
+    ws.send(JSON.stringify({ type, data }));
   } catch (error) {
-    console.error('Error sending WebSocket message:', error);
-    return false;
+    console.error('Failed to send WebSocket message:', error);
+    toast.error('Failed to send message. Please try again.');
   }
 }
 
-export function addWSListener(listener: (data: any) => void) {
-  messageListeners.push(listener);
-  return () => {
-    const index = messageListeners.indexOf(listener);
-    if (index !== -1) {
-      messageListeners.splice(index, 1);
+export function addWSListener(callback: (data: any) => void) {
+  if (!ws) {
+    connectWebSocket();
+  }
+
+  const messageHandler = (event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data);
+      callback(data);
+    } catch (error) {
+      console.error('Failed to parse WebSocket message:', error);
     }
+  };
+
+  ws?.addEventListener('message', messageHandler);
+
+  return () => {
+    ws?.removeEventListener('message', messageHandler);
   };
 }
 

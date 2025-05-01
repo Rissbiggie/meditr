@@ -115,35 +115,48 @@ export function EmergencyModal() {
       return;
     }
 
-    if (!locationData) {
+    if (!locationData || !locationData.accuracy || locationData.accuracy > 150) {
       toast({
-        title: "Location Required",
-        description: "We need your location to send help. Please enable location access and try again.",
+        title: "Location Accuracy Required",
+        description: "Please wait for a more accurate location fix or move to an area with better GPS signal.",
         variant: "destructive",
       });
       return;
     }
 
     setIsSubmitting(true);
-    try {
-      await submitEmergency({
-        emergencyType,
-        description: description || '',
-        location: locationData,
-        severity,
-        patientCount,
-        symptoms
-      });
-    } catch (error) {
-      console.error('Error submitting emergency:', error);
-      toast({
-        title: "Submission Failed",
-        description: error instanceof Error ? error.message : "Failed to submit emergency alert. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
+    let retries = 0;
+    const maxRetries = 3;
+
+    while (retries < maxRetries) {
+      try {
+        await submitEmergency({
+          emergencyType,
+          description: description || '',
+          location: locationData,
+          severity,
+          patientCount,
+          symptoms
+        });
+        break; // Success, exit loop
+      } catch (error) {
+        retries++;
+        if (retries === maxRetries) {
+          console.error('Error submitting emergency:', error);
+          toast({
+            title: "Submission Failed",
+            description: error instanceof Error 
+              ? error.message 
+              : "Failed to submit emergency alert. Please try again.",
+            variant: "destructive",
+          });
+        } else {
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retries) * 1000));
+        }
+      }
     }
+    setIsSubmitting(false);
   };
 
   const handleTypeSelect = (type: string) => {

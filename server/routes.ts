@@ -696,16 +696,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Set up WebSocket server
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
-  wss.on('connection', (ws) => {
+  // Keep track of connected clients
+  const clients = new Map();
+
+  wss.on('connection', (ws, req) => {
     console.log('WebSocket client connected');
+    
+    // Set up ping-pong to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.ping();
+      }
+    }, 30000);
 
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message.toString());
+        
+        // Validate message structure
+        if (!data.type || !data.id) {
+          throw new Error('Invalid message format');
+        }
 
         // Handle location updates
         if (data.type === 'location_update') {
-          // Broadcast to all relevant clients
+          if (!data.latitude || !data.longitude) {
+            throw new Error('Invalid location data');
+          }
+
+          // Store location update in database
+          await storage.createLocationUpdate({
+            userId: data.id,
+            latitude: data.latitude.toString(),
+            longitude: data.longitude.toString(),
+            accuracy: data.accuracy?.toString(),
+            timestamp: new Date(),
+            source: data.role || 'user'
+          });
+
+          // Broadcast to relevant clients (e.g., emergency responders)
           wss.clients.forEach((client) => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({
@@ -714,7 +743,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   id: data.id,
                   latitude: data.latitude,
                   longitude: data.longitude,
-                  role: data.role
+                  accuracy: data.accuracy,
+                  role: data.role,
+                  timestamp: Date.now()
                 }
               }));
             }
@@ -722,14 +753,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Handle emergency broadcasts
-        if (data.type === 'emergency_alert') {
+        if (data.type === 'emergency_broadcast') {
+          // Validate emergency data
+          if (!data.userId || !data.location) {
+            throw new Error('Invalid emergency data');
+          }
+
           // Store emergency in database
           const emergency = await storage.createEmergencyAlert({
             userId: data.userId,
-            latitude: data.latitude.toString(),
-            longitude: data.longitude.toString(),
-            emergencyType: data.emergencyType,
-            description: data.description || ''
+            latitude: data.location.latitude.toString(),
+            longitude: data.location.longitude.toString(),
+            accuracy: data.location.accuracy?.toString(),
+            emergencyType: data.type,
+            description: data.description || '',
+            priority: data.severity || 'medium'
           });
 
           // Broadcast emergency to response teams
@@ -744,11 +782,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (error) {
         console.error('WebSocket message error:', error);
+        // Send error back to client
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
+          }));
+        }
       }
     });
 
     ws.on('close', () => {
       console.log('WebSocket client disconnected');
+      clearInterval(pingInterval);
+    });
+
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
+      clearInterval(pingInterval);
     });
   });
 

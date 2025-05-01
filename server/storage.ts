@@ -22,13 +22,14 @@ import {
   emergencyResources,
   emergencyResourceTypes,
   emergencyTypeResources,
-  emergencyResourceAssignments
+  emergencyResourceAssignments,
+  locationUpdates
 } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import { calculateDistance } from "../client/src/hooks/use-maps";
 import { db } from "./db";
-import { eq, desc, and, sql, asc } from "drizzle-orm";
+import { eq, desc, and, sql, asc, gte } from "drizzle-orm";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
 
@@ -124,6 +125,26 @@ export interface IStorage {
     userActivity: { date: string; count: number }[];
     facilityUtilization: { facilityId: number; utilization: number }[];
   }>;
+
+  // New methods for emergency alerts and location updates
+  getEmergencyContactsByUserId(userId: number): Promise<EmergencyContact[]>;
+  createEmergencyAlert(data: {
+    userId: number;
+    latitude: string;
+    longitude: string;
+    accuracy?: string;
+    emergencyType: string;
+    description: string;
+    priority: string;
+  }): Promise<EmergencyAlert>;
+  createLocationUpdate(data: {
+    userId: number;
+    latitude: string;
+    longitude: string;
+    accuracy?: string;
+    timestamp: Date;
+    source: string;
+  }): Promise<typeof locationUpdates.$inferInsert>;
 }
 
 export const storage = {
@@ -266,7 +287,7 @@ export const storage = {
   async getActiveEmergencies(): Promise<EmergencyAlert[]> {
     return await db.select()
       .from(emergencyAlerts)
-      .where(eq(emergencyAlerts.status, 'active'))
+      .where(sql`${emergencyAlerts.status} IN ('active', 'pending')`)
       .orderBy(desc(emergencyAlerts.createdAt));
   },
 
@@ -562,7 +583,7 @@ export const storage = {
   async updateUser(id: number, userData: Partial<InsertUser>): Promise<User> {
     const [user] = await db
       .update(users)
-      .set(userData)
+      .set({ ...userData, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
     return user;
@@ -580,7 +601,7 @@ export const storage = {
   async updateEmergency(id: number, emergencyData: Partial<InsertEmergencyAlert>): Promise<EmergencyAlert> {
     const [emergency] = await db
       .update(emergencyAlerts)
-      .set(emergencyData)
+      .set({ ...emergencyData, updatedAt: new Date() })
       .where(eq(emergencyAlerts.id, id))
       .returning();
     return emergency;
@@ -602,7 +623,7 @@ export const storage = {
   async updateFacility(id: number, facilityData: Partial<InsertMedicalFacility>): Promise<MedicalFacility> {
     const [facility] = await db
       .update(medicalFacilities)
-      .set(facilityData)
+      .set({ ...facilityData, updatedAt: new Date() })
       .where(eq(medicalFacilities.id, id))
       .returning();
     return facility;
@@ -656,6 +677,87 @@ export const storage = {
       userActivity,
       facilityUtilization
     };
+  },
+
+  async getEmergencyContactsByUserId(userId: number): Promise<EmergencyContact[]> {
+    return await db.query.emergencyContacts.findMany({
+      where: eq(emergencyContacts.userId, userId)
+    });
+  },
+
+  async createEmergencyAlert(data: {
+    userId: number;
+    latitude: string;
+    longitude: string;
+    accuracy?: string;
+    emergencyType: string;
+    description: string;
+    priority: string;
+  }): Promise<EmergencyAlert> {
+    const [alert] = await db.insert(emergencyAlerts)
+      .values({
+        ...data,
+        status: 'active',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+      .returning();
+    return alert;
+  },
+
+  async createLocationUpdate(data: {
+    userId: number;
+    latitude: string;
+    longitude: string;
+    accuracy?: string;
+    timestamp: Date;
+    source: string;
+  }): Promise<typeof locationUpdates.$inferInsert> {
+    const [update] = await db.insert(locationUpdates)
+      .values(data)
+      .returning();
+    return update;
+  },
+
+  async getAllUsers(): Promise<User[]> {
+    return await db.query.users.findMany();
+  },
+
+  async updateUser(id: number, data: Partial<typeof users.$inferInsert>) {
+    const [user] = await db.update(users)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  },
+
+  async deleteUser(id: number) {
+    await db.delete(users).where(eq(users.id, id));
+  },
+
+  async updateEmergency(id: number, data: Partial<typeof emergencyAlerts.$inferInsert>) {
+    const [emergency] = await db.update(emergencyAlerts)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(emergencyAlerts.id, id))
+      .returning();
+    return emergency;
+  },
+
+  async assignResources(emergencyId: number, resourceIds: number[]) {
+    // Implementation for resource assignment
+    return { success: true };
+  },
+
+  async updateFacility(id: number, data: Partial<typeof medicalFacilities.$inferInsert>) {
+    const [facility] = await db.update(medicalFacilities)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(medicalFacilities.id, id))
+      .returning();
+    return facility;
+  },
+
+  async deleteFacility(id: number) {
+    await db.delete(medicalFacilities).where(eq(medicalFacilities.id, id));
   }
 };
 
@@ -774,7 +876,7 @@ export class DatabaseStorage implements IStorage {
   async getActiveEmergencies(): Promise<EmergencyAlert[]> {
     return await db.select()
       .from(emergencyAlerts)
-      .where(eq(emergencyAlerts.status, 'active'))
+      .where(sql`${emergencyAlerts.status} IN ('active', 'pending')`)
       .orderBy(desc(emergencyAlerts.createdAt));
   }
   

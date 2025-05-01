@@ -235,11 +235,14 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || !activeEmergencies?.some(e => e.userId === user.id)) return;
     
-    const locationInterval = setInterval(async () => {
+    let locationInterval: NodeJS.Timeout;
+    
+    const updateLocation = async () => {
       try {
         const location = await getCurrentLocation();
-        if (location) {
+        if (location && location.accuracy && location.accuracy <= 100) { // Only send if accuracy is within 100 meters
           sendWSMessage('location_update', {
+            type: 'location_update',
             id: user.id,
             role: user.role,
             latitude: location.latitude,
@@ -250,11 +253,21 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error('Failed to send location update:', error);
+        // If there's an error, try reconnecting WebSocket
+        connectWebSocket();
       }
-    }, 10000); // Send location every 10 seconds during active emergency
+    };
+
+    // Initial update
+    updateLocation();
+    
+    // Set interval for updates - 30 seconds is more battery-friendly
+    locationInterval = setInterval(updateLocation, 30000);
     
     return () => {
-      clearInterval(locationInterval);
+      if (locationInterval) {
+        clearInterval(locationInterval);
+      }
     };
   }, [user, activeEmergencies, getCurrentLocation]);
 
