@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 interface User {
   id: number;
@@ -40,6 +41,7 @@ export function AdminDashboard() {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('users');
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [newUser, setNewUser] = useState({
     username: '',
     password: '',
@@ -52,6 +54,7 @@ export function AdminDashboard() {
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof User, string>>>({});
   const [newFacility, setNewFacility] = useState({ name: '', address: '', capacity: 0, type: '' });
   const [facilityErrors, setFacilityErrors] = useState<Partial<Record<keyof Facility, string>>>({});
+  const [editFormErrors, setEditFormErrors] = useState<Partial<Record<keyof User, string>>>({});
 
   // Fetch data with proper error handling
   const { data: users = [], isLoading: isLoadingUsers, error: usersError } = useQuery<User[]>({
@@ -228,16 +231,119 @@ export function AdminDashboard() {
   };
 
   const updateEmergencyMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number, data: Partial<Emergency> }) => 
-      apiRequest('PUT', `/api/admin/emergencies/${id}`, data).then(res => res.json()),
+    mutationFn: ({ id }: { id: number, data: Partial<Emergency> }) => 
+      apiRequest('POST', `/api/emergencies/${id}/resolve`).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/emergencies'] });
-      toast.success('Emergency updated successfully');
+      toast.success('Emergency resolved successfully');
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to update emergency');
+      toast.error(error instanceof Error ? error.message : 'Failed to resolve emergency');
     }
   });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to delete user');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  const handleDeleteUser = async (userId: number) => {
+    if (window.confirm('Are you sure you want to delete this user?')) {
+      try {
+        await deleteUserMutation.mutateAsync(userId);
+      } catch (error) {
+        console.error('Error deleting user:', error);
+      }
+    }
+  };
+
+  // Add edit user mutation
+  const editUserMutation = useMutation({
+    mutationFn: async (userData: Partial<User>) => {
+      const response = await apiRequest('PUT', `/api/admin/users/${userData.id}`, userData);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update user');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      toast.success('User updated successfully');
+      setEditingUser(null);
+      setEditFormErrors({});
+    },
+    onError: (error) => {
+      if (error instanceof Error) {
+        const errorMessage = error.message;
+        if (errorMessage.includes('username')) {
+          setEditFormErrors(prev => ({ ...prev, username: 'Username already exists' }));
+        } else if (errorMessage.includes('email')) {
+          setEditFormErrors(prev => ({ ...prev, email: 'Email already exists' }));
+        } else {
+          toast.error(errorMessage);
+        }
+      } else {
+        toast.error('Failed to update user');
+      }
+    }
+  });
+
+  const validateEditForm = (user: Partial<User>) => {
+    const errors: Partial<Record<keyof User, string>> = {};
+    
+    if (!user.username?.trim()) {
+      errors.username = 'Username is required';
+    } else if (user.username.length < 3) {
+      errors.username = 'Username must be at least 3 characters';
+    }
+
+    if (!user.firstName?.trim()) {
+      errors.firstName = 'First name is required';
+    }
+
+    if (!user.lastName?.trim()) {
+      errors.lastName = 'Last name is required';
+    }
+
+    if (!user.email?.trim()) {
+      errors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email)) {
+      errors.email = 'Invalid email format';
+    }
+
+    if (!user.phone?.trim()) {
+      errors.phone = 'Phone number is required';
+    } else if (!/^\+254[17]\d{8}$/.test(user.phone)) {
+      errors.phone = 'Invalid Kenyan phone number format. Use +254 followed by 7 or 1 and 8 digits';
+    }
+
+    if (!user.role) {
+      errors.role = 'Role is required';
+    }
+
+    setEditFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleEditUser = () => {
+    if (editingUser && validateEditForm(editingUser)) {
+      editUserMutation.mutate(editingUser);
+    }
+  };
 
   return (
     <div className="container mx-auto p-4">
@@ -385,8 +491,22 @@ export function AdminDashboard() {
                       <TableCell>{user.role}</TableCell>
                       {currentUser?.role === 'admin' && (
                         <TableCell>
-                          <Button variant="outline" size="sm">Edit</Button>
-                          <Button variant="destructive" size="sm" className="ml-2">Delete</Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setEditingUser(user)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="ml-2"
+                            onClick={() => handleDeleteUser(user.id)}
+                            disabled={user.id === Number(currentUser?.id)}
+                          >
+                            Delete
+                          </Button>
                         </TableCell>
                       )}
                     </TableRow>
@@ -428,6 +548,7 @@ export function AdminDashboard() {
                             id: emergency.id,
                             data: { status: 'resolved' }
                           })}
+                          disabled={emergency.status === 'resolved'}
                         >
                           Resolve
                         </Button>
@@ -571,6 +692,103 @@ export function AdminDashboard() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+          </DialogHeader>
+          {editingUser && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Input
+                  placeholder="Username"
+                  value={editingUser.username}
+                  onChange={(e) => setEditingUser({ ...editingUser, username: e.target.value })}
+                  className={editFormErrors.username ? 'border-red-500' : ''}
+                />
+                {editFormErrors.username && (
+                  <p className="text-red-500 text-sm mt-1">{editFormErrors.username}</p>
+                )}
+              </div>
+              <div>
+                <Input
+                  placeholder="First Name"
+                  value={editingUser.firstName}
+                  onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
+                  className={editFormErrors.firstName ? 'border-red-500' : ''}
+                />
+                {editFormErrors.firstName && (
+                  <p className="text-red-500 text-sm mt-1">{editFormErrors.firstName}</p>
+                )}
+              </div>
+              <div>
+                <Input
+                  placeholder="Last Name"
+                  value={editingUser.lastName}
+                  onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
+                  className={editFormErrors.lastName ? 'border-red-500' : ''}
+                />
+                {editFormErrors.lastName && (
+                  <p className="text-red-500 text-sm mt-1">{editFormErrors.lastName}</p>
+                )}
+              </div>
+              <div>
+                <Input
+                  placeholder="Email"
+                  type="email"
+                  value={editingUser.email}
+                  onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                  className={editFormErrors.email ? 'border-red-500' : ''}
+                />
+                {editFormErrors.email && (
+                  <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>
+                )}
+              </div>
+              <div>
+                <Input
+                  placeholder="+254712345678"
+                  value={editingUser.phone}
+                  onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                  className={editFormErrors.phone ? 'border-red-500' : ''}
+                />
+                {editFormErrors.phone && (
+                  <p className="text-red-500 text-sm mt-1">{editFormErrors.phone}</p>
+                )}
+              </div>
+              <div>
+                <select
+                  className={`border rounded p-2 w-full ${editFormErrors.role ? 'border-red-500' : ''}`}
+                  value={editingUser.role}
+                  onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
+                >
+                  <option value="user">User</option>
+                  <option value="response_team">Response Team</option>
+                  {currentUser?.role === 'admin' && <option value="admin">Admin</option>}
+                </select>
+                {editFormErrors.role && (
+                  <p className="text-red-500 text-sm mt-1">{editFormErrors.role}</p>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditingUser(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleEditUser}
+              disabled={editUserMutation.isPending}
+            >
+              {editUserMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

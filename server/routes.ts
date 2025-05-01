@@ -578,8 +578,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/admin/users/:id", isAdmin, async (req, res) => {
     try {
-      const user = await storage.updateUser(req.params.id, req.body);
-      return res.json(user);
+      const userId = parseInt(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      const updatedUser = await storage.updateUser(userId, req.body);
+      return res.json(updatedUser);
     } catch (error) {
       console.error("Error updating user:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -588,8 +592,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/admin/users/:id", isAdmin, async (req, res) => {
     try {
-      await storage.deleteUser(req.params.id);
-      return res.status(204).send();
+      const userId = parseInt(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Prevent admin from deleting themselves
+      const currentUser = req.user as { id: number };
+      if (currentUser.id === userId) {
+        return res.status(400).json({ message: "Cannot delete your own account" });
+      }
+
+      // Check if user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await storage.deleteUser(userId);
+      return res.json({ message: "User deleted successfully" });
     } catch (error) {
       console.error("Error deleting user:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -609,7 +630,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/admin/emergencies/:id", isAdmin, async (req, res) => {
     try {
-      const emergency = await storage.updateEmergency(req.params.id, req.body);
+      const emergencyId = parseInt(req.params.id);
+      if (isNaN(emergencyId)) {
+        return res.status(400).json({ message: "Invalid emergency ID" });
+      }
+      const emergency = await storage.updateEmergency(emergencyId, req.body);
       return res.json(emergency);
     } catch (error) {
       console.error("Error updating emergency:", error);
@@ -619,7 +644,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/emergencies/:id/assign-resources", isAdmin, async (req, res) => {
     try {
-      const assignments = await storage.assignResources(req.params.id, req.body.resourceIds);
+      const emergencyId = parseInt(req.params.id);
+      if (isNaN(emergencyId)) {
+        return res.status(400).json({ message: "Invalid emergency ID" });
+      }
+      const assignments = await storage.assignResources(emergencyId, req.body.resourceIds);
       return res.json(assignments);
     } catch (error) {
       console.error("Error assigning resources:", error);
@@ -661,8 +690,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/admin/facilities/:id", isAdmin, async (req, res) => {
     try {
-      const facility = await storage.updateFacility(req.params.id, req.body);
-      return res.json(facility);
+      const facilityId = parseInt(req.params.id);
+      if (isNaN(facilityId)) {
+        return res.status(400).json({ message: "Invalid facility ID" });
+      }
+      const updatedFacility = await storage.updateFacility(facilityId, req.body);
+      return res.json(updatedFacility);
     } catch (error) {
       console.error("Error updating facility:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -671,8 +704,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/admin/facilities/:id", isAdmin, async (req, res) => {
     try {
-      await storage.deleteFacility(req.params.id);
-      return res.status(204).send();
+      const facilityId = parseInt(req.params.id);
+      if (isNaN(facilityId)) {
+        return res.status(400).json({ message: "Invalid facility ID" });
+      }
+      await storage.deleteFacility(facilityId);
+      return res.json({ message: "Facility deleted successfully" });
     } catch (error) {
       console.error("Error deleting facility:", error);
       return res.status(500).json({ message: "Internal server error" });

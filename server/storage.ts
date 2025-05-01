@@ -23,7 +23,9 @@ import {
   emergencyResourceTypes,
   emergencyTypeResources,
   emergencyResourceAssignments,
-  locationUpdates
+  locationUpdates,
+  userPreferences,
+  userMedicalInfo
 } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
@@ -32,6 +34,7 @@ import { db } from "./db";
 import { eq, desc, and, sql, asc, gte } from "drizzle-orm";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
+import { type EmergencyResource, type EmergencyResourceType, type EmergencyTypeResource, type EmergencyResourceAssignment } from "@shared/schema";
 
 const PostgresSessionStore = connectPg(session);
 const MemoryStore = createMemoryStore(session);
@@ -590,7 +593,27 @@ export const storage = {
   },
 
   async deleteUser(id: number): Promise<void> {
-    await db.delete(users).where(eq(users.id, id));
+    // Delete all related records in the correct order to avoid foreign key constraints
+    await db.delete(emergencyResourceAssignments)
+      .where(sql`${emergencyResourceAssignments.emergencyId} IN (
+        SELECT id FROM ${emergencyAlerts} WHERE ${emergencyAlerts.userId} = ${id}
+      )`);
+
+    await db.delete(locationUpdates)
+      .where(eq(locationUpdates.userId, id));
+
+    await db.delete(emergencyContacts)
+      .where(eq(emergencyContacts.userId, id));
+
+    await db.delete(emergencyAlerts)
+      .where(eq(emergencyAlerts.userId, id));
+
+    await db.delete(medicalInfo)
+      .where(eq(medicalInfo.userId, id));
+
+    // Finally delete the user
+    await db.delete(users)
+      .where(eq(users.id, id));
   },
   
   // Admin Emergency Management
