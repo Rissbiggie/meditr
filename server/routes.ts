@@ -741,21 +741,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json(facilities);
     } catch (error) {
       console.error("Error retrieving facilities:", error);
-      return res.status(500).json({ message: "Internal server error" });
+      return res.status(500).json({ message: "Internal server error", error: error instanceof Error ? error.message : String(error) });
     }
   });
 
   app.post("/api/admin/facilities", isAdmin, async (req, res) => {
     try {
       // Validate required fields
-      const { name, address, capacity, type } = req.body;
-      if (!name || !address || !capacity || !type) {
+      const { name, address, capacity, type, latitude, longitude } = req.body;
+      if (!name || !address || !capacity || !type || !latitude || !longitude) {
         return res.status(400).json({ message: "All fields are required" });
       }
 
       // Validate capacity is a positive number
       if (typeof capacity !== 'number' || capacity <= 0) {
         return res.status(400).json({ message: "Capacity must be a positive number" });
+      }
+
+      // Validate latitude and longitude are valid numbers
+      if (isNaN(parseFloat(latitude)) || isNaN(parseFloat(longitude))) {
+        return res.status(400).json({ message: "Latitude and longitude must be valid numbers" });
       }
 
       const facility = await storage.createFacility(req.body);

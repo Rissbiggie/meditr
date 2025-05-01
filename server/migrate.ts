@@ -15,6 +15,20 @@ async function migrate() {
       ADD COLUMN IF NOT EXISTS reset_expiry TIMESTAMP,
       ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;
     `);
+
+    console.log('Adding missing columns to medical_facilities table...');
+
+    await client.query(`
+      ALTER TABLE medical_facilities
+      ADD COLUMN IF NOT EXISTS capacity INTEGER,
+      ADD COLUMN IF NOT EXISTS current_occupancy INTEGER,
+      ADD COLUMN IF NOT EXISTS last_update TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS google_place_id TEXT UNIQUE,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+      -- Create index for Google Places ID lookups if not exists
+      CREATE INDEX IF NOT EXISTS medical_facilities_google_place_id_idx ON medical_facilities(google_place_id);
+    `);
     
     console.log('Migration completed successfully');
     client.release();

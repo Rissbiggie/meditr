@@ -35,6 +35,8 @@ interface Facility {
   address: string;
   capacity: number;
   type: string;
+  latitude: string;
+  longitude: string;
 }
 
 // Add analytics interfaces
@@ -77,7 +79,14 @@ export function AdminDashboard() {
     phone: ''
   });
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof User, string>>>({});
-  const [newFacility, setNewFacility] = useState({ name: '', address: '', capacity: 0, type: '' });
+  const [newFacility, setNewFacility] = useState({ 
+    name: '', 
+    address: '', 
+    capacity: 0, 
+    type: '',
+    latitude: '',
+    longitude: ''
+  });
   const [facilityErrors, setFacilityErrors] = useState<Partial<Record<keyof Facility, string>>>({});
   const [editFormErrors, setEditFormErrors] = useState<Partial<Record<keyof User, string>>>({});
 
@@ -233,6 +242,18 @@ export function AdminDashboard() {
       errors.capacity = 'Capacity must be greater than 0';
     }
 
+    if (!facility.latitude?.trim()) {
+      errors.latitude = 'Latitude is required';
+    } else if (isNaN(parseFloat(facility.latitude))) {
+      errors.latitude = 'Latitude must be a valid number';
+    }
+
+    if (!facility.longitude?.trim()) {
+      errors.longitude = 'Longitude is required';
+    } else if (isNaN(parseFloat(facility.longitude))) {
+      errors.longitude = 'Longitude must be a valid number';
+    }
+
     setFacilityErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -249,7 +270,7 @@ export function AdminDashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/facilities'] });
       toast.success('Facility created successfully');
-      setNewFacility({ name: '', address: '', capacity: 0, type: '' });
+      setNewFacility({ name: '', address: '', capacity: 0, type: '', latitude: '', longitude: '' });
       setFacilityErrors({});
     },
     onError: (error) => {
@@ -670,6 +691,28 @@ export function AdminDashboard() {
                     />
                     {facilityErrors.type && (
                       <p className="text-red-500 text-sm mt-1">{facilityErrors.type}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Input
+                      placeholder="Latitude"
+                      value={newFacility.latitude}
+                      onChange={(e) => setNewFacility({ ...newFacility, latitude: e.target.value })}
+                      className={`text-foreground ${facilityErrors.latitude ? 'border-red-500' : ''}`}
+                    />
+                    {facilityErrors.latitude && (
+                      <p className="text-red-500 text-sm mt-1">{facilityErrors.latitude}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Input
+                      placeholder="Longitude"
+                      value={newFacility.longitude}
+                      onChange={(e) => setNewFacility({ ...newFacility, longitude: e.target.value })}
+                      className={`text-foreground ${facilityErrors.longitude ? 'border-red-500' : ''}`}
+                    />
+                    {facilityErrors.longitude && (
+                      <p className="text-red-500 text-sm mt-1">{facilityErrors.longitude}</p>
                     )}
                   </div>
                 </div>
