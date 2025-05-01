@@ -37,6 +37,31 @@ interface Facility {
   type: string;
 }
 
+// Add analytics interfaces
+interface EmergencyType {
+  type: string;
+  count: number;
+}
+
+interface UserActivity {
+  date: string;
+  count: number;
+}
+
+interface FacilityUtilization {
+  facilityId: number;
+  utilization: number;
+}
+
+interface SystemAnalytics {
+  totalUsers: number;
+  activeEmergencies: number;
+  totalFacilities: number;
+  emergencyTypes: EmergencyType[];
+  userActivity: UserActivity[];
+  facilityUtilization: FacilityUtilization[];
+}
+
 export function AdminDashboard() {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
@@ -96,9 +121,17 @@ export function AdminDashboard() {
     enabled: currentUser?.role === 'admin', // Only fetch if user is admin
   });
 
-  const { data: analytics, isLoading: isLoadingAnalytics } = useQuery({
+  const { data: analytics, isLoading: isLoadingAnalytics, error: analyticsError } = useQuery<SystemAnalytics>({
     queryKey: ['/api/admin/analytics'],
-    queryFn: () => apiRequest('GET', '/api/admin/analytics').then(res => res.json()),
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/admin/analytics');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch analytics');
+      }
+      return response.json();
+    },
+    enabled: currentUser?.role === 'admin', // Only fetch if user is admin
   });
 
   const validateUserForm = (user: Partial<User>) => {
@@ -660,34 +693,92 @@ export function AdminDashboard() {
               <CardTitle>System Analytics</CardTitle>
             </CardHeader>
             <CardContent>
-              {analytics && (
-                <div className="grid grid-cols-3 gap-4">
+              {isLoadingAnalytics ? (
+                <div className="flex justify-center items-center h-32">
+                  <p>Loading analytics...</p>
+                </div>
+              ) : analyticsError ? (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                  {analyticsError instanceof Error ? analyticsError.message : 'Failed to load analytics'}
+                </div>
+              ) : analytics ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-3 gap-4">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Total Users</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold">{analytics.totalUsers}</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Active Emergencies</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold">{analytics.activeEmergencies}</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Total Facilities</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold">{analytics.totalFacilities}</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
                   <Card>
                     <CardHeader>
-                      <CardTitle>Users</CardTitle>
+                      <CardTitle>Emergency Types</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-2xl font-bold">{analytics.totalUsers}</p>
+                      <div className="space-y-2">
+                        {analytics.emergencyTypes.map((type: EmergencyType) => (
+                          <div key={type.type} className="flex justify-between items-center">
+                            <span className="capitalize">{type.type}</span>
+                            <span className="font-semibold">{type.count}</span>
+                          </div>
+                        ))}
+                      </div>
                     </CardContent>
                   </Card>
+
                   <Card>
                     <CardHeader>
-                      <CardTitle>Active Emergencies</CardTitle>
+                      <CardTitle>User Activity (Last 7 Days)</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-2xl font-bold">{analytics.activeEmergencies}</p>
+                      <div className="space-y-2">
+                        {analytics.userActivity.slice(-7).map((activity: UserActivity) => (
+                          <div key={activity.date} className="flex justify-between items-center">
+                            <span>{new Date(activity.date).toLocaleDateString()}</span>
+                            <span className="font-semibold">{activity.count} users</span>
+                          </div>
+                        ))}
+                      </div>
                     </CardContent>
                   </Card>
+
                   <Card>
                     <CardHeader>
-                      <CardTitle>Facilities</CardTitle>
+                      <CardTitle>Facility Utilization</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-2xl font-bold">{analytics.totalFacilities}</p>
+                      <div className="space-y-2">
+                        {analytics.facilityUtilization.map((util: FacilityUtilization) => (
+                          <div key={util.facilityId} className="flex justify-between items-center">
+                            <span>Facility #{util.facilityId}</span>
+                            <span className="font-semibold">{util.utilization.toFixed(1)}%</span>
+                          </div>
+                        ))}
+                      </div>
                     </CardContent>
                   </Card>
                 </div>
-              )}
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>

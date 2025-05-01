@@ -665,41 +665,80 @@ export const storage = {
     userActivity: { date: string; count: number }[];
     facilityUtilization: { facilityId: number; utilization: number }[];
   }> {
-    const [
-      totalUsers,
-      activeEmergencies,
-      totalFacilities,
-      emergencyTypes,
-      userActivity,
-      facilityUtilization
-    ] = await Promise.all([
-      db.select({ count: sql<number>`count(*)` }).from(users),
-      db.select({ count: sql<number>`count(*)` }).from(emergencyAlerts).where(eq(emergencyAlerts.status, 'active')),
-      db.select({ count: sql<number>`count(*)` }).from(medicalFacilities),
-      db.select({
-        type: emergencyAlerts.type,
-        count: sql<number>`count(*)`
-      }).from(emergencyAlerts).groupBy(emergencyAlerts.type),
-      db.select({
-        date: sql<string>`date_trunc('day', ${locationUpdates.timestamp})`,
-        count: sql<number>`count(distinct ${locationUpdates.userId})`
-      }).from(locationUpdates).groupBy(sql`date_trunc('day', ${locationUpdates.timestamp})`),
-      db.select({
-        facilityId: medicalFacilities.id,
-        utilization: sql<number>`count(${emergencyAlerts.id})::float / (select count(*) from ${emergencyAlerts}) * 100`
-      }).from(medicalFacilities)
-        .leftJoin(emergencyAlerts, eq(emergencyAlerts.facilityId, medicalFacilities.id))
-        .groupBy(medicalFacilities.id)
-    ]);
+    try {
+      const [
+        totalUsersResult,
+        activeEmergenciesResult,
+        totalFacilitiesResult
+      ] = await Promise.all([
+        // Get total users
+        db.select({
+          count: sql<number>`cast(count(*) as integer)`
+        }).from(users),
+        
+        // Get active emergencies
+        db.select({
+          count: sql<number>`cast(count(*) as integer)`
+        })
+        .from(emergencyAlerts)
+        .where(eq(emergencyAlerts.status, 'active')),
+        
+        // Get total facilities
+        db.select({
+          count: sql<number>`cast(count(*) as integer)`
+        }).from(medicalFacilities)
+      ]);
 
-    return {
-      totalUsers: totalUsers[0].count,
-      activeEmergencies: activeEmergencies[0].count,
-      totalFacilities: totalFacilities[0].count,
-      emergencyTypes,
-      userActivity,
-      facilityUtilization
-    };
+      // Get emergency types distribution
+      const emergencyTypes = await db.select({
+        type: emergencyAlerts.emergencyType,
+        count: sql<number>`cast(count(*) as integer)`
+      })
+      .from(emergencyAlerts)
+      .groupBy(emergencyAlerts.emergencyType);
+
+      // Get user activity for the last 7 days
+      const userActivity = await db.select({
+        date: sql<string>`to_char(date_trunc('day', ${locationUpdates.timestamp}), 'YYYY-MM-DD')`,
+        count: sql<number>`cast(count(distinct ${locationUpdates.userId}) as integer)`
+      })
+      .from(locationUpdates)
+      .where(
+        sql`${locationUpdates.timestamp} >= now() - interval '7 days'`
+      )
+      .groupBy(sql`date_trunc('day', ${locationUpdates.timestamp})`)
+      .orderBy(sql`date_trunc('day', ${locationUpdates.timestamp})`);
+
+      // For now, return mock facility utilization data since we don't have the proper relationship
+      const facilityUtilization = await db.select({
+        id: medicalFacilities.id,
+        currentOccupancy: sql<number>`COALESCE(${medicalFacilities.currentOccupancy}, 0)`,
+        capacity: sql<number>`COALESCE(${medicalFacilities.capacity}, 100)`
+      })
+      .from(medicalFacilities)
+      .then(facilities => facilities.map(f => ({
+        facilityId: f.id,
+        utilization: f.capacity > 0 ? (f.currentOccupancy / f.capacity) * 100 : 0
+      })));
+
+      return {
+        totalUsers: totalUsersResult[0]?.count || 0,
+        activeEmergencies: activeEmergenciesResult[0]?.count || 0,
+        totalFacilities: totalFacilitiesResult[0]?.count || 0,
+        emergencyTypes: emergencyTypes.map(et => ({
+          type: et.type || 'Unknown',
+          count: et.count
+        })),
+        userActivity: userActivity.map(ua => ({
+          date: ua.date,
+          count: ua.count
+        })),
+        facilityUtilization
+      };
+    } catch (error) {
+      console.error('Error in getSystemAnalytics:', error);
+      throw new Error('Failed to retrieve system analytics');
+    }
   },
 
   async getEmergencyContactsByUserId(userId: number): Promise<EmergencyContact[]> {
