@@ -38,6 +38,9 @@ export const insertLocationUpdateSchema = createInsertSchema(locationUpdates).pi
   source: true,
 });
 
+// Kenyan phone number validation
+const kenyanPhoneRegex = /^\+254[17]\d{8}$|^\+25420\d{7}$/;
+
 // User table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -73,7 +76,7 @@ export const userSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   role: z.nativeEnum(UserRole),
-  phone: z.string(),
+  phone: z.string().regex(kenyanPhoneRegex, "Phone number must be a valid Kenyan number (e.g., +254712345678 or +254202345678)"),
   password: z.string(),
   isEmailVerified: z.boolean().default(false),
   verificationToken: z.string().optional(),
@@ -146,6 +149,8 @@ export const insertEmergencyContactSchema = createInsertSchema(emergencyContacts
   name: true,
   relationship: true,
   phone: true,
+}).extend({
+  phone: z.string().regex(kenyanPhoneRegex, "Phone number must be a valid Kenyan number (e.g., +254712345678 or +254202345678)")
 });
 
 // Emergency alerts table
@@ -256,6 +261,9 @@ export const insertMedicalFacilitySchema = createInsertSchema(medicalFacilities)
     openHours: true,
     rating: true,
     capacity: true,
+  })
+  .extend({
+    phone: z.string().regex(kenyanPhoneRegex, "Phone number must be a valid Kenyan number (e.g., +254712345678 or +254202345678)").optional()
   });
 
 // Emergency resource types

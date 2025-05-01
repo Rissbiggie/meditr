@@ -36,14 +36,14 @@ export function useLocation(): UseLocationResult {
 
   const highAccuracyOptions: GeoLocationOptions = {
     enableHighAccuracy: true,
-    timeout: 15000,
+    timeout: 30000,
     maximumAge: 0
   };
 
   const lowAccuracyOptions: GeoLocationOptions = {
     enableHighAccuracy: false,
-    timeout: 10000,
-    maximumAge: 30000
+    timeout: 20000,
+    maximumAge: 60000
   };
 
   const handleSuccess = useCallback((position: GeolocationPosition) => {
@@ -62,15 +62,16 @@ export function useLocation(): UseLocationResult {
         errorMessage = 'Location access denied. Please enable location services in your browser settings and refresh the page.';
         break;
       case 2:
-        errorMessage = 'Location unavailable. Please check your device\'s location settings.';
+        errorMessage = 'Location unavailable. Please check your GPS signal and internet connection.';
         break;
       case 3:
-        errorMessage = 'Location request timed out. Please try again.';
+        errorMessage = 'Location request timed out. Please check your internet connection and try again.';
         break;
       default:
-        errorMessage = error.message;
+        errorMessage = `Location error: ${error.message}`;
     }
     
+    console.error('Location error:', { code: error.code, message: error.message });
     setError(errorMessage);
     setIsLoading(false);
     toast({
@@ -96,24 +97,35 @@ export function useLocation(): UseLocationResult {
       }
 
       setIsLoading(true);
+      console.log('Requesting location...');
 
       // Try high accuracy first
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          console.log('Location obtained successfully:', {
+            accuracy: position.coords.accuracy,
+            timestamp: new Date(position.timestamp).toISOString()
+          });
           const { latitude, longitude, accuracy } = position.coords;
           handleSuccess(position);
           resolve({ latitude, longitude, accuracy });
         },
         // If high accuracy fails, try low accuracy
         (error) => {
+          console.log('High accuracy location failed, trying low accuracy:', error);
           if (error.code === 2) { // POSITION_UNAVAILABLE
             navigator.geolocation.getCurrentPosition(
               (position) => {
+                console.log('Low accuracy location obtained:', {
+                  accuracy: position.coords.accuracy,
+                  timestamp: new Date(position.timestamp).toISOString()
+                });
                 const { latitude, longitude, accuracy } = position.coords;
                 handleSuccess(position);
                 resolve({ latitude, longitude, accuracy });
               },
               (lowAccError) => {
+                console.error('Low accuracy location failed:', lowAccError);
                 handleError(lowAccError);
                 resolve(null);
               },
